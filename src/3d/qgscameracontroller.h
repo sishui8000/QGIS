@@ -49,6 +49,7 @@ class QgsVector3D;
 class QgsWindow3DEngine;
 class Qgs3DMapScene;
 class QgsCrossSection;
+class QgsPointerLocker;
 
 /**
  * \ingroup qgis_3d
@@ -335,6 +336,16 @@ class _3D_EXPORT QgsCameraController : public QObject
      */
     void moveCenterPoint( const QVector3D &posDiff );
 
+    /**
+     * Returns the minimum depth value in the square [px - 3, px + 3] * [py - 3, py + 3]
+     * Returned depth is in range [0..1] and it is returned as it was written to the
+     * depth buffer (not linearized, see Qgs3DUtils::screenPointToWorldPos() for conversion
+     * to linear depth). Returned value 1 means there void around that pixel (no 3D objects).
+     * \since QGIS 4.2
+     */
+    double sampleDepthBuffer( int px, int py );
+
+
   private:
 #ifdef SIP_RUN
     QgsCameraController();
@@ -415,6 +426,12 @@ class _3D_EXPORT QgsCameraController : public QObject
      */
     void cameraRotationCenterChanged( QVector3D position );
 
+    /**
+     * Emitted after the depth buffer has been captured and is ready to sample.
+     * \since QGIS 4.2
+     */
+    void depthBufferReady();
+
   private slots:
     void onPositionChanged( Qt3DInput::QMouseEvent *mouse );
     void onWheel( Qt3DInput::QWheelEvent *wheel );
@@ -433,14 +450,6 @@ class _3D_EXPORT QgsCameraController : public QObject
 
     void handleTerrainNavigationWheelZoom();
 
-    /**
-     * Returns the minimum depth value in the square [px - 3, px + 3] * [py - 3, py + 3]
-     * Returned depth is in range [0..1] and it is returned as it was written to the
-     * depth buffer (not linearized, see Qgs3DUtils::screenPointToWorldPos() for conversion
-     * to linear depth). Returned value 1 means there void around that pixel (no 3D objects).
-     */
-    double sampleDepthBuffer( int px, int py );
-
     // Returns the average depth of all non void pixels
     double depthBufferNonVoidAverage();
 
@@ -451,6 +460,8 @@ class _3D_EXPORT QgsCameraController : public QObject
 
     // Moves given point (in ECEF) by specified lat/lon angle difference (in degrees) and returns new ECEF point
     QgsVector3D moveGeocentricPoint( const QgsVector3D &point, double latDiff, double lonDiff );
+
+    void applyRelativePointerRotation( double dx, double dy );
 
     //! The 3d scene the controller uses
     Qgs3DMapScene *mScene = nullptr;
@@ -516,6 +527,8 @@ class _3D_EXPORT QgsCameraController : public QObject
 
     //! Did camera change since last frame? Need to know if we should emit cameraChanged().
     bool mCameraChanged = false;
+
+    QgsPointerLocker *mPointerLocker = nullptr;
 
     // To test the cameracontroller
     friend class TestQgs3DRendering;

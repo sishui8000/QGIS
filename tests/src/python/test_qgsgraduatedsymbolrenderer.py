@@ -483,6 +483,16 @@ class TestQgsGraduatedSymbolRenderer(QgisTestCase):
             "deleteClass not correct",
         )
 
+        # Invalid indexes should be ignored and not crash
+
+        renderer.deleteClass(-1)
+        renderer.deleteClass(42)
+        self.assertEqual(
+            dumpRangeBreaks(renderer.ranges()),
+            "(25.5000-30.5000,20.0000-25.5000,0.0000-0.0000,)",
+            "invalid index not ignored",
+        )
+
         renderer.deleteAllClasses()
         self.assertEqual(
             len(renderer.ranges()), 0, "deleteAllClasses didn't delete all"
@@ -827,6 +837,43 @@ class TestQgsGraduatedSymbolRenderer(QgisTestCase):
             "(1.0000-2.0000,)",
             "Pretty breaks classification not correct",
         )
+
+    def testSetLegendSymbolItemLabel(self):
+        ms = QgsMarkerSymbol.createSimple({})
+
+        r1 = QgsRendererRange(0.0, 1.0, ms.clone(), "range 1")
+        r2 = QgsRendererRange(1.0, 2.0, ms.clone(), "range 2")
+        r3 = QgsRendererRange(2.0, 3.0, ms.clone(), "range 3")
+
+        renderer = QgsGraduatedSymbolRenderer()
+        renderer.addClassRange(r1)
+        renderer.addClassRange(r2)
+        renderer.addClassRange(r3)
+
+        # verify initial labels
+        self.assertEqual(renderer.ranges()[0].label(), "range 1")
+        self.assertEqual(renderer.ranges()[1].label(), "range 2")
+        self.assertEqual(renderer.ranges()[2].label(), "range 3")
+
+        # change label for second range using its key
+        key2 = renderer.ranges()[1].uuid()
+        renderer.setLegendSymbolItemLabel(key2, "updated range 2")
+
+        self.assertEqual(renderer.ranges()[0].label(), "range 1")
+        self.assertEqual(renderer.ranges()[1].label(), "updated range 2")
+        self.assertEqual(renderer.ranges()[2].label(), "range 3")
+
+        # change label via legendSymbolItems key
+        items = renderer.legendSymbolItems()
+        self.assertEqual(len(items), 3)
+        renderer.setLegendSymbolItemLabel(items[0].ruleKey(), "new range 1")
+        self.assertEqual(renderer.ranges()[0].label(), "new range 1")
+
+        # non-existent key should not change anything
+        renderer.setLegendSymbolItemLabel("nonexistent", "nonexistent_label")
+        self.assertEqual(renderer.ranges()[0].label(), "new range 1")
+        self.assertEqual(renderer.ranges()[1].label(), "updated range 2")
+        self.assertEqual(renderer.ranges()[2].label(), "range 3")
 
 
 if __name__ == "__main__":

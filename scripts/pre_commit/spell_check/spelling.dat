@@ -788,7 +788,7 @@ athiesm:atheism
 athiest:atheist
 atleast:at least
 atomatically:automatically
-atomical:atomic
+atomical:atomic:*
 atomicly:atomically
 atorney:attorney
 atribute:attribute
@@ -1823,6 +1823,7 @@ coordiantion:coordination
 coordindates:coordinates
 coordintes:coordinates
 coorinates:coordinates
+coorndiates:coordinates
 coorperation:corporation
 coorperations:corporations
 copmetitors:competitors
@@ -1999,7 +2000,7 @@ declaritively:declaratively
 declation:declaration
 declations:declarations
 decomissioned:decommissioned
-decomposit:decompose
+decomposit:decompose:*
 decomposited:decomposed
 decompositing:decomposing
 decomposits:decomposes
@@ -5744,7 +5745,7 @@ raelly:really
 rarified:rarefied
 rasterise:rasterize
 reaccurring:recurring
-reachs:reaches
+reachs:reaches:*
 reacing:reaching
 reacll:recall
 readabilty:readability

@@ -20,6 +20,7 @@
 #include "qgscolorrampimpl.h"
 #include "qgscolorutils.h"
 #include "qgscurvepolygon.h"
+#include "qgsdatadefinedutils.h"
 #include "qgsexpression.h"
 #include "qgsexpressioncontextutils.h"
 #include "qgsexpressionnode.h"
@@ -522,15 +523,20 @@ QgsArrowSymbolLayer::HeadType QgsSymbolLayerUtils::decodeArrowHeadType( const QV
   if ( ok )
     *ok = true;
 
+  static constexpr auto ARROW_HEAD_MAP = makeDataDefinedStringDecoder<QgsArrowSymbolLayer::HeadType>( {
+    { u"single", QgsArrowSymbolLayer::HeadSingle },
+    { u"reversed", QgsArrowSymbolLayer::HeadReversed },
+    { u"double", QgsArrowSymbolLayer::HeadDouble },
+  } );
+
+  auto evaluatedArrowHead = ARROW_HEAD_MAP.lookup( value.toString() );
+  if ( evaluatedArrowHead )
+  {
+    return *evaluatedArrowHead;
+  }
+
   bool intOk = false;
-  const QString s = value.toString().toLower().trimmed();
-  if ( s == "single"_L1 )
-    return QgsArrowSymbolLayer::HeadSingle;
-  else if ( s == "reversed"_L1 )
-    return QgsArrowSymbolLayer::HeadReversed;
-  else if ( s == "double"_L1 )
-    return QgsArrowSymbolLayer::HeadDouble;
-  else if ( value.toInt() == 1 )
+  if ( value.toInt() == 1 )
     return QgsArrowSymbolLayer::HeadReversed;
   else if ( value.toInt() == 2 )
     return QgsArrowSymbolLayer::HeadDouble;
@@ -547,15 +553,20 @@ QgsArrowSymbolLayer::ArrowType QgsSymbolLayerUtils::decodeArrowType( const QVari
   if ( ok )
     *ok = true;
 
+  static constexpr auto ARROW_TYPE_MAP = makeDataDefinedStringDecoder<QgsArrowSymbolLayer::ArrowType>( {
+    { u"plain", QgsArrowSymbolLayer::ArrowPlain },
+    { u"lefthalf", QgsArrowSymbolLayer::ArrowLeftHalf },
+    { u"righthalf", QgsArrowSymbolLayer::ArrowRightHalf },
+  } );
+
+  auto evaluatedArrowType = ARROW_TYPE_MAP.lookup( value.toString() );
+  if ( evaluatedArrowType )
+  {
+    return *evaluatedArrowType;
+  }
+
   bool intOk = false;
-  const QString s = value.toString().toLower().trimmed();
-  if ( s == "plain"_L1 )
-    return QgsArrowSymbolLayer::ArrowPlain;
-  else if ( s == "lefthalf"_L1 )
-    return QgsArrowSymbolLayer::ArrowLeftHalf;
-  else if ( s == "righthalf"_L1 )
-    return QgsArrowSymbolLayer::ArrowRightHalf;
-  else if ( value.toInt() == 1 )
+  if ( value.toInt() == 1 )
     return QgsArrowSymbolLayer::ArrowLeftHalf;
   else if ( value.toInt() == 2 )
     return QgsArrowSymbolLayer::ArrowRightHalf;
@@ -569,18 +580,21 @@ QgsArrowSymbolLayer::ArrowType QgsSymbolLayerUtils::decodeArrowType( const QVari
 
 Qgis::MarkerClipMode QgsSymbolLayerUtils::decodeMarkerClipMode( const QString &string, bool *ok )
 {
-  const QString compareString = string.trimmed();
   if ( ok )
     *ok = true;
 
-  if ( compareString.compare( "no"_L1, Qt::CaseInsensitive ) == 0 )
-    return Qgis::MarkerClipMode::NoClipping;
-  else if ( compareString.compare( "shape"_L1, Qt::CaseInsensitive ) == 0 )
-    return Qgis::MarkerClipMode::Shape;
-  else if ( compareString.compare( "centroid_within"_L1, Qt::CaseInsensitive ) == 0 )
-    return Qgis::MarkerClipMode::CentroidWithin;
-  else if ( compareString.compare( "completely_within"_L1, Qt::CaseInsensitive ) == 0 )
-    return Qgis::MarkerClipMode::CompletelyWithin;
+  static constexpr auto MARKER_CLIP_MODE_MAP = makeDataDefinedStringDecoder<Qgis::MarkerClipMode>( {
+    { u"no", Qgis::MarkerClipMode::NoClipping },
+    { u"shape", Qgis::MarkerClipMode::Shape },
+    { u"centroidwithin", Qgis::MarkerClipMode::CentroidWithin },
+    { u"completelywithin", Qgis::MarkerClipMode::CompletelyWithin },
+  } );
+
+  auto evaluatedMode = MARKER_CLIP_MODE_MAP.lookup( string );
+  if ( evaluatedMode )
+  {
+    return *evaluatedMode;
+  }
 
   if ( ok )
     *ok = false;
@@ -605,16 +619,20 @@ QString QgsSymbolLayerUtils::encodeMarkerClipMode( Qgis::MarkerClipMode mode )
 
 Qgis::LineClipMode QgsSymbolLayerUtils::decodeLineClipMode( const QString &string, bool *ok )
 {
-  const QString compareString = string.trimmed();
   if ( ok )
     *ok = true;
 
-  if ( compareString.compare( "no"_L1, Qt::CaseInsensitive ) == 0 )
-    return Qgis::LineClipMode::NoClipping;
-  else if ( compareString.compare( "during_render"_L1, Qt::CaseInsensitive ) == 0 )
-    return Qgis::LineClipMode::ClipPainterOnly;
-  else if ( compareString.compare( "before_render"_L1, Qt::CaseInsensitive ) == 0 )
-    return Qgis::LineClipMode::ClipToIntersection;
+  static constexpr auto LINE_CLIP_MODE_MAP = makeDataDefinedStringDecoder<Qgis::LineClipMode>( {
+    { u"no", Qgis::LineClipMode::NoClipping },
+    { u"duringrender", Qgis::LineClipMode::ClipPainterOnly },
+    { u"beforerender", Qgis::LineClipMode::ClipToIntersection },
+  } );
+
+  auto evaluatedMode = LINE_CLIP_MODE_MAP.lookup( string );
+  if ( evaluatedMode )
+  {
+    return *evaluatedMode;
+  }
 
   if ( ok )
     *ok = false;
@@ -1172,7 +1190,7 @@ QPixmap QgsSymbolLayerUtils::colorRampPreviewPixmap( QgsColorRamp *ramp, QSize s
         const QPen pen( ramp->color( static_cast< double >( i ) / size.width() ) );
         painter.setPen( pen );
         const int x = flipDirection ? size.width() - i - 1 : i;
-        painter.drawLine( x, 0 + padding, x, size.height() - 1 - padding );
+        painter.drawLine( QLineF( x, 0 + padding, x, size.height() - 1 - padding ) );
       }
       break;
     }
@@ -1184,7 +1202,7 @@ QPixmap QgsSymbolLayerUtils::colorRampPreviewPixmap( QgsColorRamp *ramp, QSize s
         const QPen pen( ramp->color( static_cast< double >( i ) / size.height() ) );
         painter.setPen( pen );
         const int y = flipDirection ? size.height() - i - 1 : i;
-        painter.drawLine( 0 + padding, y, size.width() - 1 - padding, y );
+        painter.drawLine( QLineF( 0 + padding, y, size.width() - 1 - padding, y ) );
       }
       break;
     }
@@ -3280,7 +3298,7 @@ bool QgsSymbolLayerUtils::functionFromSldElement( QDomElement &element, QString 
   }
 
   // parse ogc:Filter
-  QgsExpression *expr = QgsOgcUtils::expressionFromOgcFilter( elem );
+  std::unique_ptr<QgsExpression> expr = QgsOgcUtils::expressionFromOgcFilter( elem );
   if ( !expr )
     return false;
 
@@ -3294,7 +3312,6 @@ bool QgsSymbolLayerUtils::functionFromSldElement( QDomElement &element, QString 
     function = expr->expression();
   }
 
-  delete expr;
   return valid;
 }
 
@@ -3534,7 +3551,7 @@ void QgsSymbolLayerUtils::clearSymbolMap( QgsSymbolMap &symbols )
   symbols.clear();
 }
 
-QMimeData *QgsSymbolLayerUtils::symbolToMimeData( const QgsSymbol *symbol )
+std::unique_ptr<QMimeData> QgsSymbolLayerUtils::symbolToMimeData( const QgsSymbol *symbol )
 {
   if ( !symbol )
     return nullptr;
@@ -3549,7 +3566,7 @@ QMimeData *QgsSymbolLayerUtils::symbolToMimeData( const QgsSymbol *symbol )
   mimeData->setImageData( symbolPreviewPixmap( symbol, QSize( 100, 100 ), 18 ).toImage() );
   mimeData->setColorData( symbol->color() );
 
-  return mimeData.release();
+  return mimeData;
 }
 
 std::unique_ptr< QgsSymbol > QgsSymbolLayerUtils::symbolFromMimeData( const QMimeData *data )
@@ -3744,11 +3761,11 @@ QList<QColor> QgsSymbolLayerUtils::parseColorList( const QString &colorStr )
   return colors;
 }
 
-QMimeData *QgsSymbolLayerUtils::colorToMimeData( const QColor &color )
+std::unique_ptr<QMimeData> QgsSymbolLayerUtils::colorToMimeData( const QColor &color )
 {
   //set both the mime color data (which includes alpha channel), and the text (which is the color's hex
   //value, and can be used when pasting colors outside of QGIS).
-  QMimeData *mimeData = new QMimeData;
+  auto mimeData = std::make_unique<QMimeData>();
   mimeData->setColorData( QVariant( color ) );
   mimeData->setText( color.name() );
   return mimeData;
@@ -3901,10 +3918,10 @@ QgsNamedColorList QgsSymbolLayerUtils::colorListFromMimeData( const QMimeData *d
   return mimeColors;
 }
 
-QMimeData *QgsSymbolLayerUtils::colorListToMimeData( const QgsNamedColorList &colorList, const bool allFormats )
+std::unique_ptr<QMimeData> QgsSymbolLayerUtils::colorListToMimeData( const QgsNamedColorList &colorList, const bool allFormats )
 {
   //native format
-  QMimeData *mimeData = new QMimeData();
+  auto mimeData = std::make_unique<QMimeData>();
   QDomDocument xmlDoc;
   QDomElement xmlRootElement = xmlDoc.createElement( u"ColorSchemeModelDragData"_s );
   xmlDoc.appendChild( xmlRootElement );

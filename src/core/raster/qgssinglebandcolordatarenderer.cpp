@@ -46,7 +46,7 @@ Qgis::RasterRendererFlags QgsSingleBandColorDataRenderer::flags() const
   return Qgis::RasterRendererFlag::InternalLayerOpacityHandling;
 }
 
-QgsRasterRenderer *QgsSingleBandColorDataRenderer::create( const QDomElement &elem, QgsRasterInterface *input )
+std::unique_ptr<QgsRasterRenderer> QgsSingleBandColorDataRenderer::create( const QDomElement &elem, QgsRasterInterface *input )
 {
   if ( elem.isNull() )
   {
@@ -54,7 +54,7 @@ QgsRasterRenderer *QgsSingleBandColorDataRenderer::create( const QDomElement &el
   }
 
   const int band = elem.attribute( u"band"_s, u"-1"_s ).toInt();
-  QgsRasterRenderer *r = new QgsSingleBandColorDataRenderer( input, band );
+  auto r = std::make_unique<QgsSingleBandColorDataRenderer>( input, band );
   r->readXml( elem );
   return r;
 }
@@ -92,8 +92,8 @@ QgsRasterBlock *QgsSingleBandColorDataRenderer::block( int bandNo, QgsRectangle 
   // make sure input is also premultiplied!
   inputBlock->convert( Qgis::DataType::ARGB32_Premultiplied );
 
-  QRgb *inputBits = ( QRgb * ) inputBlock->bits();
-  QRgb *outputBits = ( QRgb * ) outputBlock->bits();
+  const QRgb *inputBits = reinterpret_cast< const QRgb * >( inputBlock->constBits() );
+  QRgb *outputBits = reinterpret_cast< QRgb * >( outputBlock->bits() );
   for ( qgssize i = 0; i < ( qgssize ) width * height; i++ )
   {
     const QRgb c = inputBits[i];

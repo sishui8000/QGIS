@@ -80,6 +80,7 @@ class TestQgs3DUtils : public QgsTest
 
     void testTransforms();
     void testRayFromScreenPoint();
+    void testRayFromScreenPointOrthographic();
     void testQgsBox3DDistanceTo();
     void testQgsRay3D();
     void testDefinesToShaderCode();
@@ -96,6 +97,8 @@ class TestQgs3DUtils : public QgsTest
     void testCalculateCascadeSplits();
     void testCalculateViewSpaceOrthographicBounds_data();
     void testCalculateViewSpaceOrthographicBounds();
+    void testDetermineTextureFormat_data();
+    void testDetermineTextureFormat();
 
   private:
     QgsRasterLayer *mLayerRgb;
@@ -213,6 +216,35 @@ void TestQgs3DUtils::testRayFromScreenPoint()
     {
       const QgsRay3D ray1 = Qgs3DUtils::rayFromScreenPoint( QPoint( 500, 1000 ), QSize( 1000, 1000 ), &camera );
       const QgsRay3D ray2( QVector3D( 0, 0, 0 ), QVector3D( 0, 0.258819073438644f, -0.965925812721252f ) );
+      QGSCOMPARENEARVECTOR3D( ray1.origin(), ray2.origin(), 0.00001 );
+      QGSCOMPARENEARVECTOR3D( ray1.direction(), ray2.direction(), 0.00001 );
+    }
+  }
+}
+
+void TestQgs3DUtils::testRayFromScreenPointOrthographic()
+{
+  Qt3DRender::QCamera camera;
+  {
+    camera.setProjectionType( Qt3DRender::QCameraLens::OrthographicProjection );
+    camera.setLeft( -100.0f );
+    camera.setRight( 100.0f );
+    camera.setTop( 50.0f );
+    camera.setBottom( -50.0f );
+    camera.setNearPlane( 10.0f );
+    camera.setFarPlane( 100.0f );
+    camera.setPosition( QVector3D( 0.0f, 0.0f, 0.0f ) );
+    camera.setUpVector( QVector3D( 0.0f, 1.0f, 0.0f ) );
+
+    {
+      const QgsRay3D ray1 = Qgs3DUtils::rayFromScreenPoint( QPoint( 100, 50 ), QSize( 200, 100 ), &camera );
+      const QgsRay3D ray2( QVector3D( 0.0f, 0.0f, 0.0f ), QVector3D( 0.0f, 0.0f, -1.0f ) );
+      QGSCOMPARENEARVECTOR3D( ray1.origin(), ray2.origin(), 0.00001 );
+      QGSCOMPARENEARVECTOR3D( ray1.direction(), ray2.direction(), 0.00001 );
+    }
+    {
+      const QgsRay3D ray1 = Qgs3DUtils::rayFromScreenPoint( QPoint( 50, 0 ), QSize( 200, 100 ), &camera );
+      const QgsRay3D ray2( QVector3D( -50.0f, 50.0f, 0.0f ), QVector3D( 0.0f, 0.0f, -1.0f ) );
       QGSCOMPARENEARVECTOR3D( ray1.origin(), ray2.origin(), 0.00001 );
       QGSCOMPARENEARVECTOR3D( ray1.direction(), ray2.direction(), 0.00001 );
     }
@@ -700,6 +732,52 @@ void TestQgs3DUtils::testCalculateViewSpaceOrthographicBounds()
   QGSCOMPARENEAR( actualFar, expectedFar, 0.0001f );
 }
 
+void TestQgs3DUtils::testDetermineTextureFormat_data()
+{
+  QTest::addColumn<QImage::Format>( "imageFormat" );
+  QTest::addColumn<bool>( "useSrgbFor8Bit" );
+  QTest::addColumn<Qt3DRender::QAbstractTexture::TextureFormat>( "expectedFormat" );
+  QTest::addColumn<bool>( "expectedRequiresConversion" );
+
+  QTest::newRow( "RGBA32FPx4" ) << QImage::Format_RGBA32FPx4 << false << Qt3DRender::QAbstractTexture::RGBA32F << false;
+  QTest::newRow( "RGBA32FPx4_Premultiplied" ) << QImage::Format_RGBA32FPx4_Premultiplied << true << Qt3DRender::QAbstractTexture::RGBA32F << false;
+  QTest::newRow( "RGBX32FPx4" ) << QImage::Format_RGBX32FPx4 << false << Qt3DRender::QAbstractTexture::RGB32F << false;
+  QTest::newRow( "RGBA16FPx4" ) << QImage::Format_RGBA16FPx4 << false << Qt3DRender::QAbstractTexture::RGBA16F << false;
+  QTest::newRow( "RGBA16FPx4_Premultiplied" ) << QImage::Format_RGBA16FPx4_Premultiplied << true << Qt3DRender::QAbstractTexture::RGBA16F << false;
+  QTest::newRow( "RGBX16FPx4" ) << QImage::Format_RGBX16FPx4 << false << Qt3DRender::QAbstractTexture::RGB16F << false;
+  QTest::newRow( "RGBA8888 sRGB" ) << QImage::Format_RGBA8888 << true << Qt3DRender::QAbstractTexture::SRGB8_Alpha8 << false;
+  QTest::newRow( "RGBA8888 UNorm" ) << QImage::Format_RGBA8888 << false << Qt3DRender::QAbstractTexture::RGBA8_UNorm << false;
+  QTest::newRow( "ARGB32 sRGB" ) << QImage::Format_ARGB32 << true << Qt3DRender::QAbstractTexture::SRGB8_Alpha8 << false;
+  QTest::newRow( "ARGB32_Premultiplied UNorm" ) << QImage::Format_ARGB32_Premultiplied << false << Qt3DRender::QAbstractTexture::RGBA8_UNorm << false;
+  QTest::newRow( "RGB32 sRGB" ) << QImage::Format_RGB32 << true << Qt3DRender::QAbstractTexture::SRGB8 << false;
+  QTest::newRow( "RGB32 UNorm" ) << QImage::Format_RGB32 << false << Qt3DRender::QAbstractTexture::RGB8_UNorm << false;
+  QTest::newRow( "RGB888 sRGB" ) << QImage::Format_RGB888 << true << Qt3DRender::QAbstractTexture::SRGB8 << false;
+  QTest::newRow( "RGB888 UNorm" ) << QImage::Format_RGB888 << false << Qt3DRender::QAbstractTexture::RGB8_UNorm << false;
+  QTest::newRow( "Grayscale8" ) << QImage::Format_Grayscale8 << true << Qt3DRender::QAbstractTexture::R8_UNorm << false;
+  QTest::newRow( "Alpha8" ) << QImage::Format_Alpha8 << false << Qt3DRender::QAbstractTexture::R8_UNorm << false;
+  QTest::newRow( "Grayscale16" ) << QImage::Format_Grayscale16 << true << Qt3DRender::QAbstractTexture::R16_UNorm << false;
+  QTest::newRow( "Invalid format sRGB" ) << QImage::Format_Invalid << true << Qt3DRender::QAbstractTexture::SRGB8_Alpha8 << true;
+  QTest::newRow( "Invalid format UNorm" ) << QImage::Format_Invalid << false << Qt3DRender::QAbstractTexture::RGBA8_UNorm << true;
+  QTest::newRow( "Mono format" ) << QImage::Format_Mono << false << Qt3DRender::QAbstractTexture::RGBA8_UNorm << true;
+  QTest::newRow( "Indexed8 format" ) << QImage::Format_Indexed8 << true << Qt3DRender::QAbstractTexture::SRGB8_Alpha8 << true;
+  QTest::newRow( "RGB16 format" ) << QImage::Format_RGB16 << false << Qt3DRender::QAbstractTexture::RGBA8_UNorm << true;
+  QTest::newRow( "RGBA64 format" ) << QImage::Format_RGBA64 << true << Qt3DRender::QAbstractTexture::SRGB8_Alpha8 << true;
+  QTest::newRow( "BGR888 format" ) << QImage::Format_BGR888 << false << Qt3DRender::QAbstractTexture::RGBA8_UNorm << true;
+}
+
+void TestQgs3DUtils::testDetermineTextureFormat()
+{
+  QFETCH( QImage::Format, imageFormat );
+  QFETCH( bool, useSrgbFor8Bit );
+  QFETCH( Qt3DRender::QAbstractTexture::TextureFormat, expectedFormat );
+  QFETCH( bool, expectedRequiresConversion );
+
+  bool requiresConversionToRgb = false;
+  Qt3DRender::QAbstractTexture::TextureFormat actualFormat = Qgs3DUtils::determineTextureFormat( imageFormat, useSrgbFor8Bit, requiresConversionToRgb );
+
+  QCOMPARE( actualFormat, expectedFormat );
+  QCOMPARE( requiresConversionToRgb, expectedRequiresConversion );
+}
 
 QGSTEST_MAIN( TestQgs3DUtils )
 #include "testqgs3dutils.moc"

@@ -67,8 +67,8 @@ void QgsMapToolMoveFeature::cadCanvasMoveEvent( QgsMapMouseEvent *e )
       // Else, recreate the rubber band from the translated geometries
       else
       {
-        const QgsPointXY startPointLayerCoords = toLayerCoordinates( ( QgsMapLayer * ) vlayer, mStartPointMapCoords );
-        const QgsPointXY stopPointLayerCoords = toLayerCoordinates( ( QgsMapLayer * ) vlayer, e->mapPoint() );
+        const QgsPointXY startPointLayerCoords = toLayerCoordinates( qobject_cast< QgsMapLayer * >( vlayer ), mStartPointMapCoords );
+        const QgsPointXY stopPointLayerCoords = toLayerCoordinates( qobject_cast< QgsMapLayer * >( vlayer ), e->mapPoint() );
 
         const double dx = stopPointLayerCoords.x() - startPointLayerCoords.x();
         const double dy = stopPointLayerCoords.y() - startPointLayerCoords.y();
@@ -153,7 +153,7 @@ void QgsMapToolMoveFeature::cadCanvasReleaseEvent( QgsMapMouseEvent *e )
       mMovedFeatures.clear();
       mMovedFeatures << cf.id(); //todo: take the closest feature, not the first one...
 
-      mRubberBand = createRubberBand( vlayer->geometryType() );
+      mRubberBand = createRubberBandForLayer( vlayer, { cf.id() } );
       mGeom = cf.geometry();
       mRubberBand->setToGeometry( mGeom, vlayer );
     }
@@ -161,7 +161,6 @@ void QgsMapToolMoveFeature::cadCanvasReleaseEvent( QgsMapMouseEvent *e )
     {
       mMovedFeatures = vlayer->selectedFeatureIds();
 
-      mRubberBand = createRubberBand( vlayer->geometryType() );
       QgsFeature feat;
       QgsFeatureIterator it = vlayer->getSelectedFeatures( QgsFeatureRequest().setNoAttributes() );
 
@@ -169,14 +168,17 @@ void QgsMapToolMoveFeature::cadCanvasReleaseEvent( QgsMapMouseEvent *e )
       const QgsRectangle viewRect = mCanvas->mapSettings().mapToLayerCoordinates( vlayer, mCanvas->extent() );
 
       QVector<QgsGeometry> selectedGeometries;
+      QList< QgsFeatureId > fids;
       while ( it.nextFeature( feat ) )
       {
         selectedGeometries << feat.geometry();
+        fids << feat.id();
 
         if ( allFeaturesInView && !viewRect.intersects( feat.geometry().boundingBox() ) )
           allFeaturesInView = false;
       }
       mGeom = QgsGeometry::collectGeometry( selectedGeometries );
+      mRubberBand = createRubberBandForLayer( vlayer, fids );
       mRubberBand->setToGeometry( mGeom, vlayer );
 
       if ( !allFeaturesInView )
@@ -209,8 +211,8 @@ void QgsMapToolMoveFeature::cadCanvasReleaseEvent( QgsMapMouseEvent *e )
       return;
     }
 
-    const QgsPointXY startPointLayerCoords = toLayerCoordinates( ( QgsMapLayer * ) vlayer, mStartPointMapCoords );
-    const QgsPointXY stopPointLayerCoords = toLayerCoordinates( ( QgsMapLayer * ) vlayer, e->mapPoint() );
+    const QgsPointXY startPointLayerCoords = toLayerCoordinates( qobject_cast< QgsMapLayer * >( vlayer ), mStartPointMapCoords );
+    const QgsPointXY stopPointLayerCoords = toLayerCoordinates( qobject_cast< QgsMapLayer * >( vlayer ), e->mapPoint() );
 
     const double dx = stopPointLayerCoords.x() - startPointLayerCoords.x();
     const double dy = stopPointLayerCoords.y() - startPointLayerCoords.y();

@@ -40,6 +40,7 @@
 #include <QMimeData>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSpacerItem>
 #include <QSpinBox>
 #include <QString>
 #include <QTreeView>
@@ -184,30 +185,99 @@ void QgsAttributesFormLayoutView::setModel( QAbstractItemModel *model )
   QTreeView::setModel( mModel );
 
   const auto *formLayoutModel = static_cast< QgsAttributesFormLayoutModel * >( mModel->sourceModel() );
-  connect( formLayoutModel, &QgsAttributesFormLayoutModel::externalItemDropped, this, &QgsAttributesFormLayoutView::handleExternalDroppedItem );
-  connect( formLayoutModel, &QgsAttributesFormLayoutModel::internalItemDropped, this, &QgsAttributesFormLayoutView::handleInternalDroppedItem );
+  connect( formLayoutModel, &QgsAttributesFormLayoutModel::externalItemsDropped, this, &QgsAttributesFormLayoutView::handleExternalDroppedItems );
+  connect( formLayoutModel, &QgsAttributesFormLayoutModel::internalItemsDropped, this, &QgsAttributesFormLayoutView::handleInternalDroppedItems );
 }
 
 
-void QgsAttributesFormLayoutView::handleExternalDroppedItem( QModelIndex &index )
+void QgsAttributesFormLayoutView::selectDroppedItems( const QModelIndexList &indexes )
 {
-  selectionModel()->setCurrentIndex( mModel->mapFromSource( index ), QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows );
+  if ( indexes.isEmpty() )
+    return;
 
-  const auto itemType = static_cast< QgsAttributesFormData::AttributesFormItemType >( index.data( QgsAttributesFormModel::ItemTypeRole ).toInt() );
-
-  if ( itemType == QgsAttributesFormData::QmlWidget || itemType == QgsAttributesFormData::HtmlWidget || itemType == QgsAttributesFormData::TextWidget || itemType == QgsAttributesFormData::SpacerWidget )
+  QItemSelection selection;
+  for ( const QModelIndex &index : indexes )
   {
-    onItemDoubleClicked( mModel->mapFromSource( index ) );
+    const QModelIndex proxyIndex = mModel->mapFromSource( index );
+    selection.select( proxyIndex, proxyIndex );
+  }
+
+  // Set the current index first without touching the selection, so that the
+  // selection is changed once, keeping all dropped items selected
+  selectionModel()->setCurrentIndex( mModel->mapFromSource( indexes.constLast() ), QItemSelectionModel::NoUpdate );
+  selectionModel()->select( selection, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows );
+}
+
+void QgsAttributesFormLayoutView::handleExternalDroppedItems( const QModelIndexList &indexes )
+{
+  selectDroppedItems( indexes );
+
+  for ( const QModelIndex &index : indexes )
+  {
+    const auto itemType = static_cast< QgsAttributesFormData::AttributesFormItemType >( index.data( QgsAttributesFormModel::ItemTypeRole ).toInt() );
+
+    switch ( itemType )
+    {
+      case QgsAttributesFormData::QmlWidget:
+      case QgsAttributesFormData::HtmlWidget:
+      case QgsAttributesFormData::TextWidget:
+      case QgsAttributesFormData::SpacerWidget:
+        // These need to be configured right after being dropped
+        onItemDoubleClicked( mModel->mapFromSource( index ) );
+        break;
+
+      case QgsAttributesFormData::Field:
+      case QgsAttributesFormData::Relation:
+      case QgsAttributesFormData::Container:
+      case QgsAttributesFormData::WidgetType:
+      case QgsAttributesFormData::Action:
+        break;
+    }
   }
 }
 
-void QgsAttributesFormLayoutView::handleInternalDroppedItem( QModelIndex &index )
+void QgsAttributesFormLayoutView::handleInternalDroppedItems( const QModelIndexList &indexes )
 {
-  selectionModel()->clearCurrentIndex();
-  const auto itemType = static_cast< QgsAttributesFormData::AttributesFormItemType >( index.data( QgsAttributesFormModel::ItemTypeRole ).toInt() );
-  if ( itemType == QgsAttributesFormData::Container )
+  selectDroppedItems( indexes );
+
+  // The move resets the model, collapsing the whole tree, so restore the
+  // expanded state captured in dropEvent() before the move took place.
+  const int topLevelRows = mModel->sourceModel()->rowCount( QModelIndex() );
+  for ( int row = 0; row < topLevelRows; ++row )
   {
-    expandRecursively( mModel->mapFromSource( index ) );
+    restoreExpandedState( mModel->sourceModel()->index( row, 0, QModelIndex() ) );
+  }
+  mDraggedExpandedState.clear();
+}
+
+void QgsAttributesFormLayoutView::storeExpandedState( const QModelIndex &sourceIndex )
+{
+  if ( !sourceIndex.isValid() )
+    return;
+
+  if ( auto *item = static_cast< QgsAttributesFormItem * >( sourceIndex.internalPointer() ) )
+    mDraggedExpandedState.insert( item, isExpanded( mModel->mapFromSource( sourceIndex ) ) );
+
+  const int rows = mModel->sourceModel()->rowCount( sourceIndex );
+  for ( int row = 0; row < rows; ++row )
+  {
+    storeExpandedState( mModel->sourceModel()->index( row, 0, sourceIndex ) );
+  }
+}
+
+void QgsAttributesFormLayoutView::restoreExpandedState( const QModelIndex &sourceIndex )
+{
+  if ( !sourceIndex.isValid() )
+    return;
+
+  // Expand parents before children so descendant indexes are correct
+  if ( auto *item = static_cast< QgsAttributesFormItem * >( sourceIndex.internalPointer() ) )
+    setExpanded( mModel->mapFromSource( sourceIndex ), mDraggedExpandedState.value( item, true ) );
+
+  const int rows = mModel->sourceModel()->rowCount( sourceIndex );
+  for ( int row = 0; row < rows; ++row )
+  {
+    restoreExpandedState( mModel->sourceModel()->index( row, 0, sourceIndex ) );
   }
 }
 
@@ -260,12 +330,34 @@ void QgsAttributesFormLayoutView::dropEvent( QDropEvent *event )
   if ( !( event->mimeData()->hasFormat( u"application/x-qgsattributesformavailablewidgetsrelement"_s ) || event->mimeData()->hasFormat( u"application/x-qgsattributesformlayoutelement"_s ) ) )
     return;
 
+  const bool internalMove = event->source() == this && event->mimeData()->hasFormat( u"application/x-qgsattributesformlayoutelement"_s );
+
+  if ( internalMove )
+  {
+    // Capture the expanded state of the whole tree now, before the (deferred)
+    // move resets the model, which collapses everything. It is restored
+    // afterwards in handleInternalDroppedItems().
+    mDraggedExpandedState.clear();
+    const int topLevelRows = mModel->sourceModel()->rowCount( QModelIndex() );
+    for ( int row = 0; row < topLevelRows; ++row )
+    {
+      storeExpandedState( mModel->sourceModel()->index( row, 0, QModelIndex() ) );
+    }
+  }
+
   if ( event->source() == this )
   {
     event->setDropAction( Qt::MoveAction );
   }
 
   QTreeView::dropEvent( event );
+
+  if ( internalMove && event->isAccepted() )
+  {
+    // Reporting a CopyAction makes QAbstractItemView::startDrag() skip its clearOrRemove() step.
+    event->setDropAction( Qt::CopyAction );
+    event->accept();
+  }
 }
 
 void QgsAttributesFormLayoutView::onItemDoubleClicked( const QModelIndex &index )
@@ -324,23 +416,77 @@ void QgsAttributesFormLayoutView::onItemDoubleClicked( const QModelIndex &index 
 
       //templates
       QComboBox *qmlObjectTemplate = new QComboBox();
-      qmlObjectTemplate->addItem( tr( "Free Text…" ) );
+      qmlObjectTemplate->addItem( tr( "Attribute Form Interaction" ) );
       qmlObjectTemplate->addItem( tr( "Rectangle" ) );
       qmlObjectTemplate->addItem( tr( "Pie Chart" ) );
       qmlObjectTemplate->addItem( tr( "Bar Chart" ) );
-      connect( qmlObjectTemplate, qOverload<int>( &QComboBox::currentIndexChanged ), qmlCode, [qmlCode]( int index ) {
+      QToolButton *objectTemplateButton = new QToolButton();
+      objectTemplateButton->setText( tr( "Load Template" ) );
+      connect( objectTemplateButton, &QAbstractButton::clicked, qmlCode, [qmlCode, qmlObjectTemplate]() {
         qmlCode->clear();
-        switch ( index )
+        switch ( qmlObjectTemplate->currentIndex() )
         {
           case 0:
           {
-            qmlCode->setText( QString() );
+            qmlCode->setText( QStringLiteral(
+              "import QtQuick\n"
+              "import QtQuick.Layouts\n"
+              "import QtQuick.Controls.Material\n"
+              "\n"
+              "Item {\n"
+              "  width: Math.max(parent.width || 0, 200)\n"
+              "  height: mainLayout.childrenRect.height + mainLayout.anchors.margins * 2\n"
+              "\n"
+              "  ColumnLayout {\n"
+              "    id: mainLayout\n"
+              "    anchors.fill: parent\n"
+              "    anchors.margins: 4\n"
+              "\n"
+              "    RowLayout {\n"
+              "      Text {\n"
+              "        // The attributeFormBridge.layer property provides access to the\n"
+              "        // vector layer attached to the attribute form\n"
+              "        text: \"Current layer name: \" + (attributeFormBridge.layer ? attributeFormBridge.layer.name : \"N/A\")\n"
+              "      }\n"
+              "    }\n"
+              "\n"
+              "    RowLayout {\n"
+              "      id: rowLayout\n"
+              "      spacing: 4\n"
+              "\n"
+              "      TextField {\n"
+              "        id: myAttributeTextEdit\n"
+              "        Layout.fillWidth: true\n"
+              "\n"
+              "        // The attributeFormBridge.editable property reflects the\n"
+              "        // editable state of the attribute form\n"
+              "        enabled: attributeFormBridge.editable\n"
+              "\n"
+              "        // The attributeFormBridge.currentFormFeature provides an up-to-date\n"
+              "        // QgsFeature object with all of its properties and invokable functions\n"
+              "        text: attributeFormBridge.currentFormFeature.attribute(\"my_attribute\") || \"\"\n"
+              "      }\n"
+              "\n"
+              "      RoundButton {\n"
+              "        text: \"Change\"\n"
+              "        background.layer.enabled: false\n"
+              "        onClicked: {\n"
+              "          // The attributeFormBridge enables the change of field values through\n"
+              "          // changeAttribute(field_name, value) as well as the change of geometry\n"
+              "          // through changeGeometry(geometry)\n"
+              "          attributeFormBridge.changeAttribute(\"my_attribute\", myAttributeTextEdit.text);\n"
+              "        }\n"
+              "      }\n"
+              "    }\n"
+              "  }\n"
+              "}\n"
+            ) );
             break;
           }
           case 1:
           {
             qmlCode->setText( QStringLiteral(
-              "import QtQuick 2.0\n"
+              "import QtQuick\n"
               "\n"
               "Rectangle {\n"
               "    width: 100\n"
@@ -354,8 +500,8 @@ void QgsAttributesFormLayoutView::onItemDoubleClicked( const QModelIndex &index 
           case 2:
           {
             qmlCode->setText( QStringLiteral(
-              "import QtQuick 2.0\n"
-              "import QtCharts 2.0\n"
+              "import QtQuick\n"
+              "import QtCharts\n"
               "\n"
               "ChartView {\n"
               "    width: 400\n"
@@ -374,8 +520,8 @@ void QgsAttributesFormLayoutView::onItemDoubleClicked( const QModelIndex &index 
           case 3:
           {
             qmlCode->setText( QStringLiteral(
-              "import QtQuick 2.0\n"
-              "import QtCharts 2.0\n"
+              "import QtQuick\n"
+              "import QtCharts\n"
               "\n"
               "ChartView {\n"
               "    title: \"Bar series\"\n"
@@ -440,12 +586,20 @@ void QgsAttributesFormLayoutView::onItemDoubleClicked( const QModelIndex &index 
 
       layout->addWidget( new QLabel( tr( "Title" ) ) );
       layout->addWidget( title );
+
       QGroupBox *qmlCodeBox = new QGroupBox( tr( "QML Code" ) );
-      qmlCodeBox->setLayout( new QVBoxLayout );
-      qmlCodeBox->layout()->addWidget( qmlObjectTemplate );
+      qmlCodeBox->setLayout( new QVBoxLayout() );
+
+      QWidget *qmlObjectTemplateBox = new QWidget();
+      qmlCodeBox->layout()->addWidget( qmlObjectTemplateBox );
+      qmlObjectTemplateBox->setLayout( new QHBoxLayout() );
+      qmlObjectTemplateBox->layout()->setContentsMargins( 0, 0, 0, 0 );
+      qmlObjectTemplateBox->layout()->addWidget( qmlObjectTemplate );
+      qmlObjectTemplateBox->layout()->addWidget( objectTemplateButton );
+
       QWidget *expressionWidgetBox = new QWidget();
       qmlCodeBox->layout()->addWidget( expressionWidgetBox );
-      expressionWidgetBox->setLayout( new QHBoxLayout );
+      expressionWidgetBox->setLayout( new QHBoxLayout() );
       expressionWidgetBox->layout()->setContentsMargins( 0, 0, 0, 0 );
       expressionWidgetBox->layout()->addWidget( expressionWidget );
       expressionWidgetBox->layout()->addWidget( addFieldButton );
@@ -459,10 +613,20 @@ void QgsAttributesFormLayoutView::onItemDoubleClicked( const QModelIndex &index 
 
       //update preview on text change
       connect( qmlCode, &QgsCodeEditor::editingTimeout, this, [qmlWrapper, qmlCode, previewFeature, errorFeedbackWidget] {
+        QQuickWidget *qmlWidget = dynamic_cast<QQuickWidget *>( qmlWrapper->widget() );
+        if ( qmlCode->text().trimmed().isEmpty() )
+        {
+          errorFeedbackWidget->setText( QObject::tr( "No QML code" ) );
+          if ( qmlWidget )
+          {
+            qmlWidget->setSource( QUrl() );
+          }
+          return;
+        }
         qmlWrapper->setQmlCode( qmlCode->text() );
         qmlWrapper->reinitWidget();
         qmlWrapper->setFeature( previewFeature );
-        if ( QQuickWidget *qmlWidget = dynamic_cast<QQuickWidget *>( qmlWrapper->widget() ) )
+        if ( qmlWidget )
         {
           const QList<QQmlError> errors = qmlWidget->errors();
           if ( !errors.isEmpty() )
@@ -482,9 +646,21 @@ void QgsAttributesFormLayoutView::onItemDoubleClicked( const QModelIndex &index 
       } );
 
       QScrollArea *qmlPreviewBox = new QgsScrollArea();
+      qmlPreviewBox->setWidgetResizable( true );
       qmlPreviewBox->setMinimumWidth( 200 );
-      qmlPreviewBox->setWidget( qmlWrapper->widget() );
-      //emit to load preview for the first time
+      qmlPreviewBox->setSizePolicy( QSizePolicy::Expanding, QSizePolicy::Expanding );
+
+      qmlWrapper->widget()->setSizePolicy( QSizePolicy::Expanding, QSizePolicy::Preferred );
+
+      QWidget *qmlContainerWidget = new QWidget( qmlPreviewBox );
+      qmlContainerWidget->setMinimumSize( 200, 0 );
+      qmlContainerWidget->setSizePolicy( QSizePolicy::MinimumExpanding, QSizePolicy::Preferred );
+      QVBoxLayout *qmlLayout = new QVBoxLayout( qmlContainerWidget );
+      qmlLayout->addWidget( qmlWrapper->widget() );
+      qmlLayout->addSpacerItem( new QSpacerItem( 20, 40, QSizePolicy::Expanding, QSizePolicy::Expanding ) );
+      qmlContainerWidget->setLayout( qmlLayout );
+      qmlPreviewBox->setWidget( qmlContainerWidget );
+
       emit qmlCode->editingTimeout();
       qmlSplitter->addWidget( qmlPreviewBox );
       qmlSplitter->setChildrenCollapsible( false );

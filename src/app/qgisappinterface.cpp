@@ -18,6 +18,7 @@
 
 #include "qgisappinterface.h"
 
+#include "processing/qgsappprocessingutils.h"
 #include "qgisapp.h"
 #include "qgisappstylesheet.h"
 #include "qgsappgpsdigitizing.h"
@@ -75,6 +76,11 @@ QgisAppInterface::QgisAppInterface( QgisApp *_qgis )
 QgsPluginManagerInterface *QgisAppInterface::pluginManagerInterface()
 {
   return &pluginManagerIface;
+}
+
+void QgisAppInterface::showPluginManager( int tabIndex, const QString &searchTerm )
+{
+  qgis->showPluginManager( tabIndex, searchTerm );
 }
 
 QgsLayerTreeView *QgisAppInterface::layerTreeView()
@@ -286,6 +292,16 @@ void QgisAppInterface::removePluginMeshMenu( const QString &name, QAction *actio
   qgis->removePluginMeshMenu( name, action );
 }
 
+void QgisAppInterface::addPluginToProcessingMenu( const QString &name, QAction *action )
+{
+  qgis->addPluginToProcessingMenu( name, action );
+}
+
+void QgisAppInterface::removePluginProcessingMenu( const QString &name, QAction *action )
+{
+  qgis->removePluginProcessingMenu( name, action );
+}
+
 int QgisAppInterface::addToolBarIcon( QAction *qAction )
 {
   return qgis->addPluginToolBarIcon( qAction );
@@ -413,7 +429,7 @@ void QgisAppInterface::closeMapCanvas3D( const QString &name )
 
 QSize QgisAppInterface::iconSize( bool dockedToolbar ) const
 {
-  return qgis->iconSize( dockedToolbar );
+  return QgsGui::iconSize( dockedToolbar ? Qgis::UserInterfaceIconType::DockedToolbar : Qgis::UserInterfaceIconType::MainWindowToolbar );
 }
 
 QgsLayerTreeMapCanvasBridge *QgisAppInterface::layerTreeCanvasBridge()
@@ -477,6 +493,11 @@ QgsLayoutDesignerInterface *QgisAppInterface::openLayoutDesigner( QgsMasterLayou
     return designer->iface();
   }
   return nullptr;
+}
+
+QgsModelDesignerDialog *QgisAppInterface::openModelDesigner( QgsProcessingModelAlgorithm *model )
+{
+  return qgis->appProcessingUtils()->openModelDesignerDialog( model );
 }
 
 void QgisAppInterface::showOptionsDialog( QWidget *parent, const QString &currentPage )
@@ -571,7 +592,7 @@ QDialog *QgisAppInterface::showAttributeTable( QgsVectorLayer *l, const QString 
 {
   if ( l && l->dataProvider() )
   {
-    QgsAttributeTableDialog *dialog = new QgsAttributeTableDialog( l, QgsAttributeTableFilterModel::ShowFilteredList );
+    QgsAttributeTableDialog *dialog = new QgsAttributeTableDialog( l, Qgis::AttributeTableFilterMode::ShowFilteredList );
     dialog->setFilterExpression( filterExpression );
     dialog->show();
     return dialog;
@@ -814,6 +835,10 @@ QMenu *QgisAppInterface::meshMenu()
 {
   return qgis->meshMenu();
 }
+QMenu *QgisAppInterface::processingMenu()
+{
+  return qgis->processingMenu();
+}
 QMenu *QgisAppInterface::firstRightStandardMenu()
 {
   return qgis->firstRightStandardMenu();
@@ -892,6 +917,10 @@ QToolBar *QgisAppInterface::databaseToolBar()
 QToolBar *QgisAppInterface::webToolBar()
 {
   return qgis->webToolBar();
+}
+QToolBar *QgisAppInterface::processingToolboxToolBar()
+{
+  return qgis->processingToolboxToolBar();
 }
 QActionGroup *QgisAppInterface::mapToolActionGroup()
 {
@@ -1258,6 +1287,10 @@ QAction *QgisAppInterface::actionToggleFullScreen()
 {
   return qgis->actionToggleFullScreen();
 }
+QAction *QgisAppInterface::actionNew3DMapCanvas()
+{
+  return qgis->actionNew3DMapCanvas();
+}
 QAction *QgisAppInterface::actionOptions()
 {
   return qgis->actionOptions();
@@ -1282,6 +1315,10 @@ QAction *QgisAppInterface::actionCheckQgisVersion()
 QAction *QgisAppInterface::actionAbout()
 {
   return qgis->actionAbout();
+}
+QAction *QgisAppInterface::actionEditFeaturesInPlace()
+{
+  return qgis->actionEditFeaturesInPlace();
 }
 
 bool QgisAppInterface::openFeatureForm( QgsVectorLayer *vlayer, QgsFeature &f, bool updateFeatureOnly, bool showModal )

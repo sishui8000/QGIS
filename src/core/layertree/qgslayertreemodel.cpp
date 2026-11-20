@@ -22,6 +22,7 @@
 #include "qgslayertree.h"
 #include "qgslayertreefiltersettings.h"
 #include "qgslayertreemodellegendnode.h"
+#include "qgslayertreeutils.h"
 #include "qgslayoutitemlegend.h"
 #include "qgsmaphittest.h"
 #include "qgsmaplayer.h"
@@ -195,7 +196,21 @@ QVariant QgsLayerTreeModel::data( const QModelIndex &index, int role ) const
   else if ( role == Qt::DecorationRole && index.column() == 0 )
   {
     if ( QgsLayerTree::isGroup( node ) )
+    {
+      const QString iconPath = node->customProperty( u"icon"_s ).toString();
+      if ( !iconPath.isEmpty() )
+      {
+        auto it = mNodeIcons.constFind( iconPath );
+        if ( it == mNodeIcons.constEnd() )
+        {
+          it = mNodeIcons.insert( iconPath, QIcon( iconPath ) );
+        }
+
+        return it->isNull() ? iconGroup() : *it;
+      }
+
       return iconGroup();
+    }
 
     if ( QgsLayerTree::isLayer( node ) )
     {
@@ -205,8 +220,23 @@ QVariant QgsLayerTreeModel::data( const QModelIndex &index, int role ) const
       if ( !layer )
         return QVariant();
 
-      // icons possibly overriding default icon
-      QIcon icon = QgsIconUtils::iconForLayer( layer );
+      QIcon icon;
+
+      const QString iconPath = node->customProperty( u"icon"_s ).toString();
+      if ( !iconPath.isEmpty() )
+      {
+        auto it = mNodeIcons.constFind( iconPath );
+        if ( it == mNodeIcons.constEnd() )
+        {
+          it = mNodeIcons.insert( iconPath, QIcon( iconPath ) );
+        }
+
+        icon = it->isNull() ? QgsIconUtils::iconForLayer( layer ) : *it;
+      }
+      else
+      {
+        icon = QgsIconUtils::iconForLayer( layer );
+      }
 
       // if there's just on legend entry that should be embedded in layer - do that!
       if ( testFlag( ShowLegend ) && legendEmbeddedInParent( nodeLayer ) )
@@ -298,11 +328,7 @@ QVariant QgsLayerTreeModel::data( const QModelIndex &index, int role ) const
 
         if ( layer->isSpatial() && layer->crs().isValid() )
         {
-          QString layerCrs = layer->crs().authid();
-          if ( !std::isnan( layer->crs().coordinateEpoch() ) )
-          {
-            layerCrs += u" @ %1"_s.arg( qgsDoubleToString( layer->crs().coordinateEpoch(), 3 ) );
-          }
+          const QString layerCrs = layer->crs().userFriendlyIdentifier( Qgis::CrsIdentifierType::ShortString );
           if ( QgsVectorLayer *vl = qobject_cast<QgsVectorLayer *>( layer ) )
             title += tr( " (%1 - %2)" ).arg( QgsWkbTypes::displayString( vl->wkbType() ), layerCrs ).toHtmlEscaped();
           else
@@ -801,6 +827,12 @@ void QgsLayerTreeModel::addTargetScreenProperties( const QgsScreenProperties &pr
   mTargetScreenProperties.insert( properties );
 }
 
+void QgsLayerTreeModel::setTargetScreenProperties( const QSet<QgsScreenProperties> &properties )
+{
+  mTargetScreenProperties = properties;
+  invalidateDisplayData();
+}
+
 QSet<QgsScreenProperties> QgsLayerTreeModel::targetScreenProperties() const
 {
   return mTargetScreenProperties;
@@ -820,6 +852,41 @@ void QgsLayerTreeModel::waitForHitTestBlocking()
 bool QgsLayerTreeModel::hitTestInProgress() const
 {
   return static_cast< bool >( mHitTestTask );
+}
+
+void QgsLayerTreeModel::invalidateDisplayData()
+{
+  std::function< void( QgsLayerTreeNode * ) > invalidateNode;
+  invalidateNode = [this, &invalidateNode]( QgsLayerTreeNode *node ) {
+    if ( !node )
+      return;
+
+    switch ( node->nodeType() )
+    {
+      case QgsLayerTreeNode::NodeLayer:
+      {
+        auto layerNode = qobject_cast< QgsLayerTreeLayer * >( node );
+        const QList<QgsLayerTreeModelLegendNode *> legendNodes = layerLegendNodes( layerNode );
+        for ( QgsLayerTreeModelLegendNode *legendNode : legendNodes )
+        {
+          legendNode->invalidateDisplayData();
+        }
+
+        break;
+      }
+
+      case QgsLayerTreeNode::NodeGroup:
+      case QgsLayerTreeNode::NodeCustom:
+        break;
+    }
+
+    const QList<QgsLayerTreeNode *> children = node->children();
+    for ( QgsLayerTreeNode *childNode : children )
+    {
+      invalidateNode( childNode );
+    }
+  };
+  invalidateNode( mRootNode );
 }
 
 void QgsLayerTreeModel::nodeWillAddChildren( QgsLayerTreeNode *node, int indexFrom, int indexTo )
@@ -892,6 +959,12 @@ void QgsLayerTreeModel::nodeCustomPropertyChanged( QgsLayerTreeNode *node, const
 {
   if ( QgsLayerTree::isLayer( node ) && key == "showFeatureCount"_L1 )
     refreshLayerLegend( QgsLayerTree::toLayer( node ) );
+  else if ( ( QgsLayerTree::isGroup( node ) || QgsLayerTree::isLayer( node ) ) && key == "icon"_L1 )
+  {
+    const QModelIndex index = node2index( node );
+    if ( index.isValid() )
+      emit dataChanged( index, index, { Qt::DecorationRole } );
+  }
 }
 
 
@@ -1292,6 +1365,13 @@ bool QgsLayerTreeModel::dropMimeData( const QMimeData *data, Qt::DropAction acti
 
     if ( nodes.isEmpty() )
       return false;
+
+    // moving around layer group preserves id but copying creates new id for the group + subgroups
+    if ( action == Qt::CopyAction )
+    {
+      for ( QgsLayerTreeNode *node : std::as_const( nodes ) )
+        QgsLayerTreeUtils::regenerateGroupIds( node );
+    }
 
     QgsLayerTree::toGroup( nodeParent )->insertChildNodes( row, nodes );
   }

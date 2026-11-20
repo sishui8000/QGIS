@@ -18,12 +18,14 @@
 #include "qgsgui.h"
 #include "qgslayertree.h"
 #include "qgslayertreeembeddedwidgetregistry.h"
+#include "qgslayertreegroup.h"
 #include "qgslayertreemodel.h"
 #include "qgslayertreemodellegendnode.h"
 #include "qgslayertreeutils.h"
 #include "qgslayertreeviewdefaultactions.h"
 #include "qgsmaplayer.h"
 #include "qgsmessagebar.h"
+#include "qgsscreenhelper.h"
 
 #include <QApplication>
 #include <QContextMenuEvent>
@@ -38,7 +40,7 @@
 using namespace Qt::StringLiterals;
 
 #ifdef ENABLE_MODELTEST
-#include "modeltest.h"
+#include <QAbstractItemModelTester>
 #endif
 
 #include "qgslayertreeviewindicator.h"
@@ -96,7 +98,9 @@ void QgsLayerTreeViewBase::setLayerTreeModel( QgsLayerTreeModel *model )
 
   mLayerTreeModel = model;
 
-  mLayerTreeModel->addTargetScreenProperties( QgsScreenProperties( screen() ) );
+  mLayerTreeModel->setTargetScreenProperties( { QgsScreenProperties( screen() ) } );
+  auto screenHelper = new QgsScreenHelper( this );
+  connect( screenHelper, &QgsScreenHelper::screenDpiChanged, this, [this] { mLayerTreeModel->setTargetScreenProperties( { QgsScreenProperties( screen() ) } ); } );
 
   connect( mLayerTreeModel->rootGroup(), &QgsLayerTreeNode::expandedChanged, this, &QgsLayerTreeViewBase::onExpandedChanged );
 
@@ -497,6 +501,8 @@ void QgsLayerTreeView::setModel( QAbstractItemModel *model )
   proxyModel->setHideValidLayers( mHideValidLayers );
 
   setModel( treeModel, proxyModel );
+
+  connect( this, &QTreeView::doubleClicked, this, &QgsLayerTreeView::onDoubleClicked );
 }
 
 void QgsLayerTreeView::setModel( QgsLayerTreeModel *treeModel, QgsLayerTreeProxyModel *proxyModel )
@@ -512,7 +518,7 @@ void QgsLayerTreeView::setModel( QgsLayerTreeModel *treeModel, QgsLayerTreeProxy
   connect( mProxyModel, &QAbstractItemModel::rowsRemoved, this, &QgsLayerTreeView::modelRowsRemoved );
 
 #ifdef ENABLE_MODELTEST
-  new ModelTest( mProxyModel, this );
+  new QAbstractItemModelTester( mProxyModel, QAbstractItemModelTester::FailureReportingMode::Fatal, this );
 #endif
 
   QTreeView::setModel( mProxyModel );
@@ -677,6 +683,17 @@ void QgsLayerTreeView::onCurrentChanged()
 
   emit currentLayerChanged( layerCurrent );
 }
+
+void QgsLayerTreeView::onDoubleClicked( const QModelIndex &index )
+{
+  QgsLayerTreeNode *node = index2node( index );
+
+  if ( !node || node->nodeType() != QgsLayerTreeNode::NodeGroup )
+    return;
+
+  node->setExpanded( !node->isExpanded() );
+}
+
 
 void QgsLayerTreeView::onCustomPropertyChanged( QgsLayerTreeNode *node, const QString &key )
 {

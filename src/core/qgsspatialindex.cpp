@@ -283,22 +283,18 @@ class QgsSpatialIndexData : public QSharedData
       double low[] = { std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest() };
       double high[] = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max() };
       const SpatialIndex::Region query( low, high, 2 );
-      QgsSpatialIndexCopyVisitor visitor( mRTree );
+      QgsSpatialIndexCopyVisitor visitor( mRTree.get() );
       other.mRTree->intersectsWithQuery( query, visitor );
     }
 
-    ~QgsSpatialIndexData()
-    {
-      delete mRTree;
-      delete mStorage;
-    }
+    ~QgsSpatialIndexData() {}
 
     QgsSpatialIndexData &operator=( const QgsSpatialIndexData &rh ) = delete;
 
     void initTree( IDataStream *inputStream = nullptr )
     {
       // for now only memory manager
-      mStorage = StorageManager::createNewMemoryStorageManager();
+      mStorage.reset( StorageManager::createNewMemoryStorageManager() );
 
       // R-Tree parameters
       const double fillFactor = 0.7;
@@ -311,16 +307,16 @@ class QgsSpatialIndexData : public QSharedData
       SpatialIndex::id_type indexId;
 
       if ( inputStream && inputStream->hasNext() )
-        mRTree = RTree::createAndBulkLoadNewRTree( RTree::BLM_STR, *inputStream, *mStorage, fillFactor, indexCapacity, leafCapacity, dimension, variant, indexId );
+        mRTree.reset( RTree::createAndBulkLoadNewRTree( RTree::BLM_STR, *inputStream, *mStorage, fillFactor, indexCapacity, leafCapacity, dimension, variant, indexId ) );
       else
-        mRTree = RTree::createNewRTree( *mStorage, fillFactor, indexCapacity, leafCapacity, dimension, variant, indexId );
+        mRTree.reset( RTree::createNewRTree( *mStorage, fillFactor, indexCapacity, leafCapacity, dimension, variant, indexId ) );
     }
 
     //! Storage manager
-    SpatialIndex::IStorageManager *mStorage = nullptr;
+    std::unique_ptr<SpatialIndex::IStorageManager> mStorage;
 
     //! R-tree containing spatial index
-    SpatialIndex::ISpatialIndex *mRTree = nullptr;
+    std::unique_ptr<SpatialIndex::ISpatialIndex> mRTree;
 
     mutable QRecursiveMutex mMutex;
 };
@@ -399,6 +395,7 @@ bool QgsSpatialIndex::addFeature( QgsFeature &feature, QgsFeatureSink::Flags )
 
   if ( addFeature( id, rect ) )
   {
+    // already detached in addFeature
     if ( d->mFlags & QgsSpatialIndex::FlagStoreFeatureGeometries )
     {
       const QMutexLocker locker( &d->mMutex );
@@ -433,6 +430,8 @@ bool QgsSpatialIndex::insertFeature( QgsFeatureId id, const QgsRectangle &bounds
 
 bool QgsSpatialIndex::addFeature( QgsFeatureId id, const QgsRectangle &bounds )
 {
+  d.detach();
+
   const SpatialIndex::Region r( QgsSpatialIndexUtils::rectangleToRegion( bounds ) );
 
   const QMutexLocker locker( &d->mMutex );
@@ -468,6 +467,7 @@ bool QgsSpatialIndex::deleteFeature( const QgsFeature &f )
   if ( !featureInfo( f, r, id ) )
     return false;
 
+  d.detach();
   const QMutexLocker locker( &d->mMutex );
   // TODO: handle exceptions
   if ( d->mFlags & QgsSpatialIndex::FlagStoreFeatureGeometries )
@@ -479,6 +479,7 @@ bool QgsSpatialIndex::deleteFeature( QgsFeatureId id, const QgsRectangle &bounds
 {
   const SpatialIndex::Region r = QgsSpatialIndexUtils::rectangleToRegion( bounds );
 
+  d.detach();
   const QMutexLocker locker( &d->mMutex );
   // TODO: handle exceptions (if the comment in the other ::deleteFeature implementation is correct!)
   if ( d->mFlags & QgsSpatialIndex::FlagStoreFeatureGeometries )
@@ -549,4 +550,9 @@ QgsGeometry QgsSpatialIndex::geometry( QgsFeatureId id ) const
 QAtomicInt QgsSpatialIndex::refs() const
 {
   return d->ref;
+}
+
+void QgsSpatialIndex::detach()
+{
+  d.detach();
 }

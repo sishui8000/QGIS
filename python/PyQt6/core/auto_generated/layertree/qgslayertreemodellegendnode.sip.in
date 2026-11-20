@@ -152,6 +152,15 @@ Notification from model that information from associated map view has
 changed. Default implementation does nothing.
 %End
 
+    virtual void invalidateDisplayData();
+%Docstring
+Invalidates cached display data for the node.
+
+The default implementation does nothing.
+
+.. versionadded:: 4.2
+%End
+
     struct ItemContext
     {
           ItemContext();
@@ -305,7 +314,7 @@ Emitted when the size of this node changes.
 Construct the node with pointer to its parent layer node
 %End
 
-    QgsRenderContext *createTemporaryRenderContext() const /Factory/;
+    std::unique_ptr<QgsRenderContext> createTemporaryRenderContext() const;
 %Docstring
 Returns a temporary context or ``None`` if legendMapViewData are not
 valid
@@ -348,6 +357,7 @@ Constructor for QgsSymbolLegendNode.
 
     virtual bool setData( const QVariant &value, int role );
 
+    virtual void invalidateDisplayData();
 
     virtual QSizeF drawSymbol( const QgsLegendSettings &settings, ItemContext *ctx, double itemHeight ) const;
 
@@ -499,7 +509,7 @@ Evaluates and returns the text label of the current node
 .. versionadded:: 3.10
 %End
 
-    QgsExpressionContextScope *createSymbolScope() const /Factory/;
+    std::unique_ptr<QgsExpressionContextScope> createSymbolScope() const;
 %Docstring
 Create an expression context scope containing symbol related variables.
 
@@ -729,6 +739,7 @@ definition of the node's appearance
 
     virtual QVariant data( int role ) const;
 
+    virtual void invalidateDisplayData();
 
     virtual ItemMetrics draw( const QgsLegendSettings &settings, ItemContext &ctx );
 

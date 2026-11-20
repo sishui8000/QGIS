@@ -60,6 +60,7 @@ class QgsMapLayerElevationProperties;
 class QgsObjectEntityVisitorInterface;
 class QgsObjectVisitorContext;
 class QgsSldExportContext;
+class QgsSaveStyleResult;
 
 class QDomDocument;
 class QKeyEvent;
@@ -442,7 +443,7 @@ class CORE_EXPORT QgsMapLayer : public QObject
      * Returns QGIS Server Properties for the map layer
      * \since QGIS 3.22
      */
-    QgsMapLayerServerProperties *serverProperties() { return mServerProperties.get(); };
+    QgsMapLayerServerProperties *serverProperties() SIP_DISALLOWNONE { return mServerProperties.get(); };
 
     /**
      * Returns QGIS Server Properties const for the map layer
@@ -826,6 +827,26 @@ class CORE_EXPORT QgsMapLayer : public QObject
      */
     QgsMapLayer::SaveStyleResults saveStyleToDatabaseV2(
       const QString &name, const QString &description, bool useAsDefault, const QString &uiFileContent, QString &msgError SIP_OUT, QgsMapLayer::StyleCategories categories = QgsMapLayer::AllStyleCategories
+    );
+
+    /**
+     * Saves selected representation of the layer's style to a table in the
+     * database.
+     *
+     * \param name Style name
+     * \param description A description of the style
+     * \param useAsDefault Set to TRUE if style should be used as the default
+     * style for the layer
+     * \param uiFileContent
+     * \param formats Flag specifying which style formats to save.
+     * \param categories the style categories to be saved.
+     *
+     * \returns Object containing information about export status and messages.
+     *
+     * \since QGIS 4.4
+     */
+    QgsSaveStyleResult saveStyleToDatabaseV3(
+      const QString &name, const QString &description, bool useAsDefault, const QString &uiFileContent, const Qgis::SaveStyleFormats formats, QgsMapLayer::StyleCategories categories = QgsMapLayer::AllStyleCategories
     );
 
     // TODO QGIS 5.0 -- fix this. We incorrectly have a single boolean flag which in which false is used inconsistently for "a style WAS found but an error occurred loading it" vs "no style was found".
@@ -1552,12 +1573,12 @@ class CORE_EXPORT QgsMapLayer : public QObject
     QString providerType() const;
 
     //! Returns pointer to layer's undo stack
-    QUndoStack *undoStack();
+    QUndoStack *undoStack() SIP_DISALLOWNONE;
 
     /**
      * Returns pointer to layer's style undo stack
      */
-    QUndoStack *undoStackStyles();
+    QUndoStack *undoStackStyles() SIP_DISALLOWNONE;
 
     /**
      * Sets the URL for the layer's legend.
@@ -1601,7 +1622,7 @@ class CORE_EXPORT QgsMapLayer : public QObject
     /**
      * Gets access to the layer's style manager. Style manager allows switching between multiple styles.
      */
-    QgsMapLayerStyleManager *styleManager() const;
+    QgsMapLayerStyleManager *styleManager() const SIP_DISALLOWNONE;
 
     /**
      * Sets 3D renderer for the layer. Takes ownership of the renderer.
@@ -1771,7 +1792,10 @@ class CORE_EXPORT QgsMapLayer : public QObject
     void setOriginalXmlProperties( const QString &originalXmlProperties );
 
     /**
-     * Generates an unique identifier for this layer, the generate ID is prefixed by \a layerName
+     * Generates an unique identifier for the layer with the specified \a layerName.
+     *
+     * The generated ID is prefixed by the (possibly truncated) \a layerName string.
+     *
      * \since QGIS 3.8
      */
     static QString generateId( const QString &layerName );
@@ -2523,10 +2547,10 @@ class CORE_EXPORT QgsMapLayer : public QObject
     QgsObjectCustomProperties mCustomProperties;
 
     //! Controller of legend items of this layer
-    std::unique_ptr<QgsMapLayerLegend> mLegend;
+    QgsMapLayerLegend *mLegend = nullptr;
 
     //! Manager of multiple styles available for a layer (may be NULLPTR)
-    std::unique_ptr<QgsMapLayerStyleManager> mStyleManager;
+    QgsMapLayerStyleManager *mStyleManager = nullptr;
 
     Qgis::AutoRefreshMode mAutoRefreshMode = Qgis::AutoRefreshMode::Disabled;
 

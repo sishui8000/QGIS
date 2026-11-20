@@ -17,6 +17,8 @@
 
 #include "qgspostgresprovider.h"
 
+#include <nlohmann/json.hpp>
+
 #include "qgsapplication.h"
 #include "qgscoordinatereferencesystem.h"
 #include "qgsdbquerylog.h"
@@ -1857,8 +1859,22 @@ QStringList QgsPostgresProvider::uniqueStringsMatching( int index, const QString
 
 void QgsPostgresProvider::enumValues( int index, QStringList &enumList ) const
 {
+  const QList<QPair<QString, QString>> valuePairs = codedValues( index );
+  QStringList valuesList;
+  valuesList.reserve( valuePairs.size() );
+
+  for ( const QPair<QString, QString> &pair : valuePairs )
+  {
+    valuesList.append( pair.first );
+  }
+
+  enumList = valuesList;
+}
+
+QList<QPair<QString, QString>> QgsPostgresProvider::codedValues( int index ) const
+{
   if ( index < 0 || index >= mAttributeFields.count() )
-    return;
+    return {};
 
   if ( !mShared->fieldSupportsEnumValuesIsSet( index ) )
   {
@@ -1866,7 +1882,7 @@ void QgsPostgresProvider::enumValues( int index, QStringList &enumList ) const
   }
   else if ( !mShared->fieldSupportsEnumValues( index ) )
   {
-    return;
+    return {};
   }
 
   //find out type of index
@@ -1874,7 +1890,8 @@ void QgsPostgresProvider::enumValues( int index, QStringList &enumList ) const
   QString typeName = mAttributeFields.at( index ).typeName();
 
   // Remove schema extension from typeName
-  typeName.remove( QRegularExpression( "^([^.]+\\.)+" ) );
+  const thread_local QRegularExpression rx( "^([^.]+\\.)+" );
+  typeName.remove( rx );
 
   //is type an enum?
   const QString typeSql = u"SELECT typtype FROM pg_type WHERE typname=%1"_s.arg( quotedValue( typeName ) );
@@ -1882,9 +1899,10 @@ void QgsPostgresProvider::enumValues( int index, QStringList &enumList ) const
   if ( typeRes.PQresultStatus() != PGRES_TUPLES_OK || typeRes.PQntuples() < 1 )
   {
     mShared->setFieldSupportsEnumValues( index, false );
-    return;
+    return {};
   }
 
+  QStringList enumList;
   const QString typtype = typeRes.PQgetvalue( 0, 0 );
   if ( typtype.compare( 'e'_L1, Qt::CaseInsensitive ) == 0 )
   {
@@ -1902,6 +1920,14 @@ void QgsPostgresProvider::enumValues( int index, QStringList &enumList ) const
       mShared->setFieldSupportsEnumValues( index, false );
     }
   }
+
+  QList<QPair<QString, QString>> values;
+  for ( const QString &s : std::as_const( enumList ) )
+  {
+    values.append( qMakePair( s, s ) );
+  }
+
+  return values;
 }
 
 bool QgsPostgresProvider::parseEnumRange( QStringList &enumValues, const QString &attributeName ) const
@@ -2408,7 +2434,7 @@ bool QgsPostgresProvider::addFeatures( QgsFeatureList &flist, Flags flags )
         QgsAttributes attrs2 = flist[i].attributes();
         QVariant v2 = attrs2.value( idx, QgsVariantUtils::createNullVariant( QMetaType::Type::Int ) ); // default to NULL for missing attributes
 
-        if ( v2 != attributeValue )
+        if ( !qgsVariantEqual( v2, attributeValue ) )
           break;
       }
 
@@ -2453,6 +2479,14 @@ bool QgsPostgresProvider::addFeatures( QgsFeatureList &flist, Flags flags )
         else if ( fieldTypeName == "bytea"_L1 )
         {
           values += delim + quotedByteaValue( attributeValue );
+        }
+        else if ( fieldTypeName == "text"_L1 )
+        {
+          //save maps and lists of string fields as json
+          if ( attributeValue.userType() == QMetaType::Type::QVariantMap || attributeValue.userType() == QMetaType::Type::QVariantList )
+            values += delim + quotedJsonValue( attributeValue );
+          else
+            values += delim + quotedValue( attributeValue );
         }
         //TODO: convert arrays and hstore to native types
         else
@@ -2525,14 +2559,24 @@ bool QgsPostgresProvider::addFeatures( QgsFeatureList &flist, Flags flags )
         QString v;
         if ( QgsVariantUtils::isNull( value ) || QgsVariantUtils::isUnsetAttributeValue( value ) )
         {
-          QgsField fld = field( attrIdx );
+          const QgsField fld = field( attrIdx );
           v = paramValue( defaultValues[i], defaultValues[i] );
           feature->setAttribute( attrIdx, convertValue( fld.type(), fld.subType(), v, fld.typeName() ) );
         }
         else
         {
-          // the conversion functions expects the list as a string, so convert it
-          if ( value.userType() == QMetaType::Type::QStringList )
+          const QgsField fld = field( attrIdx );
+          const QString fieldTypeName = fld.typeName();
+          // the conversion functions expects the list as a string, so convert it according to the field type
+          if ( fieldTypeName == "json"_L1 || fieldTypeName == "jsonb"_L1 )
+          {
+            v = QString::fromStdString( QgsJsonUtils::jsonFromVariant( value ).dump() );
+          }
+          else if ( fieldTypeName == "bytea"_L1 )
+          {
+            v = "\\x" + value.toByteArray().toHex();
+          }
+          else if ( value.userType() == QMetaType::Type::QStringList )
           {
             QStringList list_vals = value.toStringList();
             // all strings need to be double quoted to allow special postgres
@@ -2551,9 +2595,8 @@ bool QgsPostgresProvider::addFeatures( QgsFeatureList &flist, Flags flags )
             v = paramValue( value.toString(), defaultValues[i] );
           }
 
-          if ( v != value.toString() )
+          if ( v != value.toString() && fieldTypeName != "json"_L1 && fieldTypeName != "jsonb"_L1 && fieldTypeName != "bytea"_L1 )
           {
-            QgsField fld = field( attrIdx );
             feature->setAttribute( attrIdx, convertValue( fld.type(), fld.subType(), v, fld.typeName() ) );
           }
         }
@@ -3045,6 +3088,14 @@ bool QgsPostgresProvider::changeAttributeValues( const QgsChangedAttributesMap &
           {
             sql += quotedByteaValue( attributeValue );
           }
+          else if ( fld.typeName() == "text"_L1 )
+          {
+            //save maps and lists of string fields as json
+            if ( attributeValue.userType() == QMetaType::Type::QVariantMap || attributeValue.userType() == QMetaType::Type::QVariantList )
+              sql += quotedJsonValue( attributeValue );
+            else
+              sql += quotedValue( attributeValue );
+          }
           else
           {
             sql += quotedValue( attributeValue );
@@ -3394,6 +3445,14 @@ bool QgsPostgresProvider::changeFeatures( const QgsChangedAttributesMap &attr_ma
           {
             sql += quotedByteaValue( value );
           }
+          else if ( fld.typeName() == "text"_L1 )
+          {
+            //save maps and lists of string fields as json
+            if ( value.userType() == QMetaType::Type::QVariantMap || value.userType() == QMetaType::Type::QVariantList )
+              sql += quotedJsonValue( value );
+            else
+              sql += quotedValue( value );
+          }
           else
           {
             sql += quotedValue( value );
@@ -3680,6 +3739,12 @@ bool QgsPostgresProvider::estimateExtent() const
   if ( mIsQuery )
   {
     QgsDebugMsgLevel( "Estimating extent of queries is not supported", 2 );
+    return false;
+  }
+
+  if ( mSpatialColType == SctTopoGeometry )
+  {
+    QgsDebugMsgLevel( "Estimating extent of topological geometries is not supported", 2 );
     return false;
   }
 
@@ -4707,7 +4772,7 @@ Qgis::VectorExportResult QgsPostgresProvider::createEmptyLayer(
       QgsDebugMsgLevel(
         u"creating field #%1 -> #%2 name %3 type %4 typename %5 width %6 precision %7"_s.arg( fldIdx )
           .arg( offset )
-          .arg( fld.name(), QVariant::typeToName( fld.type() ), fld.typeName() )
+          .arg( fld.name(), QMetaType( fld.type() ).name(), fld.typeName() )
           .arg( fld.length() )
           .arg( fld.precision() ),
         2
@@ -4978,7 +5043,7 @@ QVariant QgsPostgresProvider::convertValue( QMetaType::Type type, QMetaType::Typ
 
     default:
       result = value;
-      if ( !result.convert( type ) || value.isNull() )
+      if ( !result.convert( QMetaType( type ) ) || value.isNull() )
         result = QgsVariantUtils::createNullVariant( type );
       break;
   }

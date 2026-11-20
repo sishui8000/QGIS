@@ -23,7 +23,7 @@
 #include "qgsexpressionbuilderdialog.h"
 #include "qgsexpressioncontextutils.h"
 #include "qgsexpressionfinder.h"
-#include "qgsguiutils.h"
+#include "qgsgui.h"
 #include "qgslayertree.h"
 #include "qgslayertreemodel.h"
 #include "qgslayertreemodellegendnode.h"
@@ -211,17 +211,17 @@ QgsLayoutLegendWidget::QgsLayoutLegendWidget( QgsLayoutItemLegend *legend, QgsMa
   mExpandAllToolButton->setIcon( QIcon( QgsApplication::iconPath( "mActionExpandTree.svg" ) ) );
   mCollapseAllToolButton->setIcon( QIcon( QgsApplication::iconPath( "mActionCollapseTree.svg" ) ) );
 
-  mMoveDownToolButton->setIconSize( QgsGuiUtils::iconSize( true ) );
-  mMoveUpToolButton->setIconSize( QgsGuiUtils::iconSize( true ) );
-  mAddGroupToolButton->setIconSize( QgsGuiUtils::iconSize( true ) );
-  mAddToolButton->setIconSize( QgsGuiUtils::iconSize( true ) );
-  mRemoveToolButton->setIconSize( QgsGuiUtils::iconSize( true ) );
-  mEditPushButton->setIconSize( QgsGuiUtils::iconSize( true ) );
-  mCountToolButton->setIconSize( QgsGuiUtils::iconSize( true ) );
-  mExpressionFilterButton->setIconSize( QgsGuiUtils::iconSize( true ) );
-  mLayerExpressionButton->setIconSize( QgsGuiUtils::iconSize( true ) );
-  mExpandAllToolButton->setIconSize( QgsGuiUtils::iconSize( true ) );
-  mCollapseAllToolButton->setIconSize( QgsGuiUtils::iconSize( true ) );
+  mMoveDownToolButton->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
+  mMoveUpToolButton->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
+  mAddGroupToolButton->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
+  mAddToolButton->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
+  mRemoveToolButton->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
+  mEditPushButton->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
+  mCountToolButton->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
+  mExpressionFilterButton->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
+  mLayerExpressionButton->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
+  mExpandAllToolButton->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
+  mCollapseAllToolButton->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
 
   mRasterStrokeColorButton->setColorDialogTitle( tr( "Select Stroke Color" ) );
   mRasterStrokeColorButton->setAllowOpacity( true );
@@ -1038,7 +1038,7 @@ void QgsLayoutLegendWidget::mAddToolButton_clicked()
     visibleLayers = mMapCanvas->layers( true );
   }
 
-  QgsLayoutLegendLayersDialog addDialog( this );
+  QgsLayoutLegendLayersDialog addDialog( this, mLegend->layout()->project() );
   addDialog.setVisibleLayers( visibleLayers );
   if ( addDialog.exec() == QDialog::Accepted )
   {
@@ -1294,9 +1294,9 @@ void QgsLayoutLegendWidget::mLayerExpressionButton_clicked()
 
   // Passing the vector layer to expression dialog exposes the fields, but we still want generic
   // layer variables
-  QgsExpressionContextScope *limitedLayerScope { QgsExpressionContextUtils::layerScope( vl ) };
+  std::unique_ptr<QgsExpressionContextScope> limitedLayerScope = QgsExpressionContextUtils::layerScope( vl );
   limitedLayerScope->setFields( QgsFields() );
-  legendContext.appendScope( limitedLayerScope );
+  legendContext.appendScope( std::move( limitedLayerScope ) );
 
   QgsExpressionBuilderDialog expressiondialog( nullptr, currentExpression, nullptr, u"generic"_s, legendContext );
   if ( expressiondialog.exec() )
@@ -1549,7 +1549,7 @@ QMenu *QgsLayoutLegendMenuProvider::createContextMenu()
   if ( mWidget->legend()->syncMode() != Qgis::LegendSyncMode::Manual )
     return nullptr; // no editing allowed
 
-  QMenu *menu = new QMenu();
+  QMenu *menu = new QMenu( mView );
 
   if ( QgsLayerTree::isLayer( mView->currentNode() ) )
   {
@@ -1769,7 +1769,7 @@ QgsLayoutLegendNodeWidget::QgsLayoutLegendNodeWidget( QgsLayoutItemLegend *legen
 
   connect( mColumnSplitBehaviorComboBox, qOverload<int>( &QComboBox::currentIndexChanged ), this, &QgsLayoutLegendNodeWidget::columnSplitChanged );
 
-  connect( mColorRampLegendWidget, &QgsColorRampLegendNodeWidget::widgetChanged, this, &QgsLayoutLegendNodeWidget::colorRampLegendChanged );
+  connect( mColorRampLegendWidget, &QgsColorRampLegendNodeWidget::changed, this, &QgsLayoutLegendNodeWidget::colorRampLegendChanged );
 
   connectChildPanel( mColorRampLegendWidget );
 }

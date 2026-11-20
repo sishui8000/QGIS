@@ -42,7 +42,7 @@
 using namespace Qt::StringLiterals;
 
 Qgs3DMapCanvas::Qgs3DMapCanvas()
-  : m_aspectEngine( new Qt3DCore::QAspectEngine )
+  : m_aspectEngine( std::make_unique<Qt3DCore::QAspectEngine>() )
   , m_renderAspect( new Qt3DRender::QRenderAspect )
   , m_inputAspect( new Qt3DInput::QInputAspect )
   , m_logicAspect( new Qt3DLogic::QLogicAspect )
@@ -73,6 +73,8 @@ Qgs3DMapCanvas::Qgs3DMapCanvas()
   } );
 
   setCursor( Qt::OpenHandCursor );
+
+  // This is needed to handle the mouse events
   installEventFilter( this );
 }
 
@@ -85,8 +87,6 @@ Qgs3DMapCanvas::~Qgs3DMapCanvas()
   mScene = nullptr;
   mMapSettings->deleteLater();
   mMapSettings = nullptr;
-
-  delete m_aspectEngine;
 }
 
 void Qgs3DMapCanvas::setRootEntity( Qt3DCore::QEntity *root )
@@ -306,29 +306,22 @@ void Qgs3DMapCanvas::setMapTool( Qgs3DMapTool *tool )
 
 bool Qgs3DMapCanvas::eventFilter( QObject *watched, QEvent *event )
 {
-  if ( watched != this )
-    return false;
+  if ( watched == this )
+  {
+    return canvasEventFilter( event );
+  }
+  else
+  {
+    return containerEventFilter( event );
+  }
+}
 
+bool Qgs3DMapCanvas::canvasEventFilter( QEvent *event )
+{
   if ( mScene && mScene->get3DAxis() && mScene->get3DAxis()->handleEvent( event ) )
   {
     event->accept();
     return true;
-  }
-
-  // ShortcutOverride is sent if the pressed key is "claimed" by a shortcut,
-  // but we are given a chance to handle it anyway. We need to basically treat
-  // it as if it were a KeyPress.
-  if ( event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease || event->type() == QEvent::ShortcutOverride )
-  {
-    // if the camera controller will handle a key event, don't allow it to propagate
-    // outside of the 3d window or it may be grabbed by a parent window level shortcut
-    // and accordingly never be received by the camera controller
-    if ( cameraController() && cameraController()->keyboardEventFilter( static_cast<QKeyEvent *>( event ) ) )
-    {
-      event->accept();
-      return true;
-    }
-    return false;
   }
 
   if ( !mMapTool )
@@ -345,14 +338,42 @@ bool Qgs3DMapCanvas::eventFilter( QObject *watched, QEvent *event )
     case QEvent::MouseMove:
       mMapTool->mouseMoveEvent( static_cast<QMouseEvent *>( event ) );
       break;
+    case QEvent::Wheel:
+      mMapTool->mouseWheelEvent( static_cast<QWheelEvent *>( event ) );
+      break;
+    default:
+      break;
+  }
+  return false;
+}
+
+bool Qgs3DMapCanvas::containerEventFilter( QEvent *event )
+{
+  // ShortcutOverride is sent if the pressed key is "claimed" by a shortcut,
+  // but we are given a chance to handle it anyway. We need to basically treat
+  // it as if it were a KeyPress.
+  if ( event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease || event->type() == QEvent::ShortcutOverride )
+  {
+    // if the camera controller will handle a key event, don't allow it to propagate
+    // outside of the 3d window or it may be grabbed by a parent window level shortcut
+    // and accordingly never be received by the camera controller
+    if ( cameraController() && cameraController()->keyboardEventFilter( static_cast<QKeyEvent *>( event ) ) )
+    {
+      event->accept();
+      return true;
+    }
+  }
+
+  if ( !mMapTool )
+    return false;
+
+  switch ( event->type() )
+  {
     case QEvent::KeyPress:
       mMapTool->keyPressEvent( static_cast<QKeyEvent *>( event ) );
       break;
     case QEvent::KeyRelease:
       mMapTool->keyReleaseEvent( static_cast<QKeyEvent *>( event ) );
-      break;
-    case QEvent::Wheel:
-      mMapTool->mouseWheelEvent( static_cast<QWheelEvent *>( event ) );
       break;
     default:
       break;

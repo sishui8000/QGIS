@@ -97,6 +97,7 @@ RUN  apt-get update \
     libsfcgal2 \
     supervisor \
     unzip \
+    wayland-protocols \
     xauth \
     xfonts-100dpi \
     xfonts-75dpi \
@@ -184,6 +185,8 @@ FROM binary-only
 RUN  apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     bison \
+    build-essential \
+    g++-x86-64-linux-gnu \
     ccache \
     clang-22 \
     cmake \
@@ -228,6 +231,7 @@ RUN  apt-get update \
     qt6-tools-dev-tools \
     qt6-base-private-dev \
     qt6-5compat-dev \
+    qt6-wayland-dev \
     qt6-webengine-dev \
     qt6-pdf-dev \
     qt6-serialport-dev \

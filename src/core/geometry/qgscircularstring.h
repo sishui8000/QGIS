@@ -94,7 +94,7 @@ class CORE_EXPORT QgsCircularString : public QgsSimpleCurve
 
     QDomElement asGml2( QDomDocument &doc, int precision = 17, const QString &ns = "gml", QgsAbstractGeometry::AxisOrder axisOrder = QgsAbstractGeometry::AxisOrder::XY ) const override;
     QDomElement asGml3( QDomDocument &doc, int precision = 17, const QString &ns = "gml", QgsAbstractGeometry::AxisOrder axisOrder = QgsAbstractGeometry::AxisOrder::XY ) const override;
-    json asJsonObject( int precision = 17 ) const override SIP_SKIP;
+    json asJsonObject( int precision = 17, Qgis::GeoJsonProfile profile = Qgis::GeoJsonProfile::Legacy ) const override SIP_SKIP;
     bool isValid( QString &error SIP_OUT, Qgis::GeometryValidityFlags flags = Qgis::GeometryValidityFlags() ) const override;
     int indexOf( const QgsPoint &point ) const final;
 
@@ -108,7 +108,6 @@ class CORE_EXPORT QgsCircularString : public QgsSimpleCurve
     void addToPainterPath( QPainterPath &path ) const override;
     void drawAsPolygon( QPainter &p ) const override;
     bool insertVertex( QgsVertexId position, const QgsPoint &vertex ) override;
-    bool deleteVertex( QgsVertexId position ) override;
     bool deleteVertices( const QSet<QgsVertexId> &positions ) override;
     double closestSegment( const QgsPoint &pt, QgsPoint &segmentPt SIP_OUT, QgsVertexId &vertexAfter SIP_OUT, int *leftOf SIP_OUT = nullptr, double epsilon = 4 * std::numeric_limits<double>::epsilon() ) const override;
     bool pointAt( int node, QgsPoint &point, Qgis::VertexType &type ) const override;
@@ -184,7 +183,7 @@ class CORE_EXPORT QgsCircularString : public QgsSimpleCurve
     static double closestPointOnArc( double x1, double y1, double x2, double y2, double x3, double y3,
                                      const QgsPoint &pt, QgsPoint &segmentPt,  QgsVertexId &vertexAfter, int *leftOf, double epsilon );
     void insertVertexBetween( int after, int before, int pointOnCircle );
-    void deleteVertex( int i );
+    void removeVertexAt( int i );
 
 };
 

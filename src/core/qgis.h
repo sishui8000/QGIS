@@ -48,7 +48,7 @@ int QgisEvent = QEvent::User + 1;
 // qHash implementation for scoped enum type
 // https://gitlab.com/frostasm/programming-knowledge-base/-/snippets/20120
 #define QHASH_FOR_CLASS_ENUM( T )                                                     \
-  inline uint qHash( const T &t, uint seed )                                          \
+  inline size_t qHash( const T &t, size_t seed )                                      \
   {                                                                                   \
     return ::qHash( static_cast<typename std::underlying_type<T>::type>( t ), seed ); \
   }
@@ -109,7 +109,7 @@ int QgisEvent = QEvent::User + 1;
 
       ReadConfiguration = 1 << 1,   //!< Can read an authentication configuration
       UpdateConfiguration = 1 << 2, //!< Can update an authentication configuration
-      DeleteConfiguration = 1 << 3, //!< Can deleet an authentication configuration
+      DeleteConfiguration = 1 << 3, //!< Can delete an authentication configuration
       CreateConfiguration = 1 << 4, //!< Can create a new authentication configuration
 
       ReadCertificateIdentity = 1 << 5,   //!< Can read a certificate identity
@@ -242,6 +242,26 @@ int QgisEvent = QEvent::User + 1;
     };
     Q_DECLARE_FLAGS( LayerFilters, LayerFilter )
     Q_FLAG( LayerFilters )
+
+
+    /**
+     * Flags for layer item capabilities
+     *
+     *  \since QGIS 4.40
+     */
+    enum class LayerItemCapability : int SIP_ENUM_BASETYPE( IntFlag )
+    {
+      AddComments = 1 << 0, //!< Comments can be added to the layer item
+    };
+    Q_ENUM( LayerItemCapability )
+
+    /**
+     * Flags for layer item capabilities
+     *
+     * \since QGIS 4.40
+     */
+    Q_DECLARE_FLAGS( LayerItemCapabilities, LayerItemCapability )
+    Q_FLAG( LayerItemCapabilities )
 
     /**
      * Flags for loading layer styles.
@@ -566,12 +586,25 @@ int QgisEvent = QEvent::User + 1;
 
     /**
      * \ingroup core
+     * \brief Actions to take when attempting to create a layer on an existing datasource
+     * \since QGIS 4.2
+     */
+   enum class CreateLayerActionOnExisting : int
+   {
+     Abort, //!< Abort the creation on detecting an existing layer.
+     CreateOrOverwriteFile, //!< Create or overwrite whole file. For existing file-based datasources the entire datasource will be deleted, including all other layers in it. For non file-based datasources this is treated the same as CreateOrOverwriteLayer.
+     CreateOrOverwriteLayer, //!< Create or overwrite existing layer only. For existing file-based datasources other layers in the datasource will be untouched.
+   };
+    Q_ENUM( CreateLayerActionOnExisting )
+
+    /**
+     * \ingroup core
      * \brief Enumeration of feature count states
      * \since QGIS 3.20
      */
     enum class FeatureCountState SIP_MONKEYPATCH_SCOPEENUM_UNNEST( QgsVectorDataProvider, FeatureCountState ) : int
-      {
-      Uncounted = -2, //!< Feature count not yet computed
+    {
+      Uncounted = -2,    //!< Feature count not yet computed
       UnknownCount = -1, //!< Provider returned an unknown feature count
     };
     Q_ENUM( FeatureCountState )
@@ -1276,7 +1309,7 @@ int QgisEvent = QEvent::User + 1;
       OverPoint,   //!< Arranges candidates over a point (or centroid of a polygon), or at a preset offset from the point. Applies to point or polygon layers only.
       Line,        //!< Arranges candidates parallel to a generalised line representing the feature or parallel to a polygon's perimeter. Applies to line or polygon layers only.
       Curved,      //!< Arranges candidates following the curvature of a line feature. Applies to line layers only.
-      Horizontal,  //!< Arranges horizontal candidates scattered throughout a polygon feature. Applies to polygon layers only.
+      Horizontal,  //!< Arranges horizontal candidates scattered throughout a polygon feature or along a line feature. Applies to polygon and line layers only.
       Free,        //!< Arranges candidates scattered throughout a polygon feature. Candidates are rotated to respect the polygon's orientation. Applies to polygon layers only.
       OrderedPositionsAroundPoint, //!< Candidates are placed in predefined positions around a point. Preference is given to positions with greatest cartographic appeal, e.g., top right, bottom right, etc. Applies to point layers only.
       PerimeterCurved, //!< Arranges candidates following the curvature of a polygon's boundary. Applies to polygon layers only.
@@ -1450,6 +1483,22 @@ int QgisEvent = QEvent::User + 1;
       Justify SIP_MONKEYPATCH_COMPAT_NAME( MultiJustify ),                 //!< Justified
     };
     Q_ENUM( LabelMultiLineAlignment )
+
+    /**
+     * Anchor point of label text.
+     *
+     * \note Prior to QGIS 4.4 this was available as QgsLabelLineSettings::AnchorTextPoint
+     *
+     * \since QGIS 4.4
+     */
+    enum class TextAnchorPoint SIP_MONKEYPATCH_SCOPEENUM_UNNEST( QgsLabelLineSettings, AnchorTextPoint ) : int
+    {
+      StartOfText,     //!< Anchor using start of text
+      CenterOfText,    //!< Anchor using center of text
+      EndOfText,       //!< Anchor using end of text
+      FollowPlacement, //!< Automatically set the anchor point based on the line anchor point value. Values <25% of line length will use the start of text, values > 75% will use the end of text, and values in between will use the center of the text.
+    };
+    Q_ENUM( TextAnchorPoint )
 
     /**
      * Type of file filters
@@ -2206,6 +2255,7 @@ int QgisEvent = QEvent::User + 1;
       {
       QgisInternal SIP_MONKEYPATCH_COMPAT_NAME( ValidatorQgisInternal ), //!< Use internal QgsGeometryValidator method
       Geos SIP_MONKEYPATCH_COMPAT_NAME( ValidatorGeos ), //!< Use GEOS validation methods
+      Sfcgal, //!< Use SFCGAL validation methods. Only available for QGIS builds with SFCGAL support enabled. \since QGIS 4.4
     };
     Q_ENUM( GeometryValidationEngine )
 
@@ -2871,6 +2921,18 @@ int QgisEvent = QEvent::User + 1;
     Q_ENUM( RasterizedRenderingPolicy )
 
     /**
+     * Rendering formats.
+     *
+     * \since QGIS 4.4
+     */
+    enum class RenderFormat : int
+    {
+      Raster, //!< Raster-based rendering
+      Vector, //!< Vector-based rendering
+    };
+    Q_ENUM( RenderFormat )
+
+    /**
      * Flags which adjust the way maps are rendered.
      *
      * \since QGIS 3.22
@@ -2898,6 +2960,7 @@ int QgisEvent = QEvent::User + 1;
       RecordProfile = 0x20000, //!< Enable run-time profiling while rendering \since QGIS 3.34
       AlwaysUseGlobalMasks
       = 0x40000, //!< When applying clipping paths for selective masking, always use global ("entire map") paths, instead of calculating local clipping paths per rendered feature. This results in considerably more complex vector exports in all current Qt versions. This flag only applies to vector map exports. \since QGIS 3.38
+      DrawLabelSelection = 0x80000 //!< Whether vector selections should be change the rendering of associated labels \since QGIS 4.4
     };
     //! Map settings flags
     Q_DECLARE_FLAGS( MapSettingsFlags, MapSettingsFlag ) SIP_MONKEYPATCH_FLAGS_UNNEST( QgsMapSettings, Flags )
@@ -2933,7 +2996,8 @@ int QgisEvent = QEvent::User + 1;
       RecordProfile            = 0x80000, //!< Enable run-time profiling while rendering \since QGIS 3.34
       AlwaysUseGlobalMasks     = 0x100000, //!< When applying clipping paths for selective masking, always use global ("entire map") paths, instead of calculating local clipping paths per rendered feature. This results in considerably more complex vector exports in all current Qt versions. This flag only applies to vector map exports. \since QGIS 3.38
       DisableSymbolClippingToExtent = 0x200000, //!< Force symbol clipping to map extent to be disabled in all situations. This will result in slower rendering, and should only be used in situations where the feature clipping is always undesirable. \since QGIS 3.40
-      RenderLayerTree = 0x400000        //!< The render is for a layer tree display where map based properties are not available and where avoidance of long rendering freeze is crucial \since QGIS 3.44
+      RenderLayerTree = 0x400000,        //!< The render is for a layer tree display where map based properties are not available and where avoidance of long rendering freeze is crucial \since QGIS 3.44
+      DrawLabelSelection = 0x800000     //!< Whether vector selections should be change the rendering of associated labels \since QGIS 4.4
     };
     //! Render context flags
     Q_DECLARE_FLAGS( RenderContextFlags, RenderContextFlag ) SIP_MONKEYPATCH_FLAGS_UNNEST( QgsRenderContext, Flags )
@@ -3017,6 +3081,10 @@ int QgisEvent = QEvent::User + 1;
       DrawUnplacedLabels = 1 << 6,    //!< Whether to render unplaced labels as an indicator/warning for users
       CollectUnplacedLabels = 1 << 7, //!< Whether unplaced labels should be collected in the labeling results (regardless of whether they are being rendered) \since QGIS 3.20
       DrawLabelMetrics = 1 << 8,      //!< Whether to render label metric guides (for debugging) \since QGIS 3.30
+      IgnoreObstacles = 1 << 9,       //!< Disable obstacle handling \since QGIS 4.4
+      SingleCandidateOnly = 1 << 10,  //!< Generate only the single least-cost candidate for each feature. Useful for fast labeling, such as interactive labeling previews. \since QGIS 4.4
+      IgnoreOverlaps = 1 << 11,       //!< Disable overlap detection and search solver, immediately returning lowest cost candidate per feature \since QGIS 4.4
+      DisableSearchTree = 1 << 12,    //!< Disable the creation of the label search tree \since QGIS 4.4
     };
     Q_ENUM( LabelingFlag )
 
@@ -3859,6 +3927,28 @@ int QgisEvent = QEvent::User + 1;
     Q_ENUM( ProcessingMode )
 
     /**
+     * Standard menu groups for Processing tools
+     *
+     * \since QGIS 4.4
+     */
+    enum class ProcessingMenu
+    {
+      VectorAnalysis,       //!< Vector Analysis menu
+      VectorResearch,       //!< Vector Research menu
+      VectorGeoprocessing,  //!< Vector Geoprocessing menu
+      VectorGeometry,       //!< Vector Geometry menu
+      VectorDataManagement, //!< Vector Data Management menu
+      VectorGeneral,        //!< Vector (top-level) menu
+      RasterProjections,    //!< Raster Projections menu
+      RasterConversion,     //!< Raster Conversion menu
+      RasterExtraction,     //!< Raster Extraction menu
+      RasterAnalysis,       //!< Raster Analysis menu
+      RasterMiscellaneous,  //!< Raster Miscellaneous menu
+      RasterGeneral,        //!< Raster (top-level) menu
+    };
+    Q_ENUM( ProcessingMenu )
+
+    /**
      * Flags which control behavior for a Processing feature source.
      *
      * \note Prior to QGIS 3.36 this was available as QgsProcessingFeatureSourceDefinition::Flag
@@ -4034,7 +4124,7 @@ int QgisEvent = QEvent::User + 1;
       ChildOutput,    //!< Parameter value is taken from an output generated by a child algorithm
       StaticValue,    //!< Parameter value is a static value
       Expression,     //!< Parameter value is taken from an expression, evaluated just before the algorithm runs
-      ExpressionText, //!< Parameter value is taken from a text with expressions, evaluated just before the algorithm runs
+      ExpressionText, //!< Parameter value is taken from a text with expressions, evaluated just before the algorithm runs. \deprecated QGIS 4.4. Use Expression or StaticValue instead.
       ModelOutput,    //!< Parameter value is linked to an output parameter for the model
     };
     Q_ENUM( ProcessingModelChildParameterSource )
@@ -4385,6 +4475,18 @@ int QgisEvent = QEvent::User + 1;
     Q_ENUM( MaterialRenderingTechnique )
 
     /**
+     * Modes for material settings widgets.
+     *
+     * \since QGIS 4.4
+     */
+    enum class MaterialWidgetMode : int
+    {
+      Compact, //!< Shows only the main material settings
+      Full,    //!< Shows all material settings
+    };
+    Q_ENUM( MaterialWidgetMode )
+
+    /**
      * Optional per-instance properties of instanced materials.
      *
      * \since QGIS 4.2
@@ -4397,6 +4499,18 @@ int QgisEvent = QEvent::User + 1;
     Q_ENUM( InstancedMaterialFlag )
     Q_DECLARE_FLAGS( InstancedMaterialFlags, InstancedMaterialFlag )
     Q_FLAG( InstancedMaterialFlags )
+
+    /**
+     * 3D billboard scaling modes.
+     *
+     * \since QGIS 4.4
+     */
+    enum class BillboardScaleMode : int
+    {
+      ViewIndependent, //!< Billboard has a fixed pixel size on the screen, regardless of the camera distance
+      Perspective      //!< Billboard size is scaled with perspective distance from camera, using world units
+    };
+    Q_ENUM( BillboardScaleMode )
 
     /**
      * Texture filtering qualities.
@@ -5024,6 +5138,20 @@ int QgisEvent = QEvent::User + 1;
     Q_FLAG( LegendJsonRenderFlags )
 
     /**
+     * GeoJson export Profile according to OGC Features and Geometries JSON - Part 1: Core
+     * https://docs.ogc.org/is/21-045r1/21-045r1.html
+     * \since QGIS 4.2
+     */
+    enum class GeoJsonProfile : int
+    {
+      Legacy, //!< Legacy GeoJson profile used in QGIS prior to 4.2, which included some non-standard extensions and deviations from the RFC7946 standard, such as support for  transforming geometries to a CRS different than CRS84. This profile is still available for backward compatibility but is not recommended for new projects.
+      Rfc7946,    //!< GeoJson profile compliant with RFC7946 standard "http://www.opengis.net/def/profile/OGC/0/rfc7946"
+      JsonFg,     //!< GeoJson profile from OGC Features and Geometries JSON Part 1: core "http://www.opengis.net/def/profile/OGC/0/jsonfg"
+      JsonFgPlus, //!< GeoJson profile from OGC Features and Geometries JSON Part 1: core "http://www.opengis.net/def/profile/OGC/0/jsonfg-plus"
+    };
+    Q_ENUM( GeoJsonProfile )
+
+    /**
      * Action types.
      *
      * Prior to QGIS 3.30 this was available as QgsActionMenu::ActionType
@@ -5121,6 +5249,21 @@ int QgisEvent = QEvent::User + 1;
       Superseded, //!< Date superseded
     };
     Q_ENUM( MetadataDateType )
+
+    /**
+     * Type of academic reference.
+     * \since QGIS 4.4
+     */
+    enum class AcademicReferenceType : int
+    {
+      Unknown,        //!< Unknown or generic reference
+      Book,           //!< Book
+      JournalArticle, //!< Journal or periodical article
+      Presentation,   //!< Conference paper, presentation, or proceeding
+      WebPage,        //!< Web page or online resource
+      Preprint        //!< Preprint or repository paper
+    };
+    Q_ENUM( AcademicReferenceType )
 
     /**
      * Raster color interpretation.
@@ -5573,6 +5716,26 @@ int QgisEvent = QEvent::User + 1;
     Q_ENUM( AngleUnit )
 
     /**
+     * Wind speed units.
+     *
+     * Wind barbs use knots so we use this enum for preset conversion values.
+     *
+     * \note Prior to QGIS 4.4 this was available as QgsMeshRendererVectorWindBarbSettings::WindSpeedUnit.
+     *
+     * \since QGIS 4.4
+     */
+    enum class WindSpeedUnit SIP_MONKEYPATCH_SCOPEENUM_UNNEST( QgsMeshRendererVectorWindBarbSettings, WindSpeedUnit ) : int
+    {
+      MetersPerSecond = 0, //!< Meters per second
+      KilometersPerHour,   //!< Kilometers per hour
+      Knots,               //!< Knots (Nautical miles per hour)
+      MilesPerHour,        //!< Miles per hour
+      FeetPerSecond,       //!< Feet per second
+      OtherUnit            //!< Other unit
+    };
+    Q_ENUM( WindSpeedUnit )
+
+    /**
      * Temporal units.
      *
      * \note Prior to QGIS 3.30 this was available as QgsUnitTypes::TemporalUnit.
@@ -5777,6 +5940,40 @@ int QgisEvent = QEvent::User + 1;
     };
     Q_ENUM( ScaleBarDistanceLabelHorizontalPlacement )
 
+    /**
+     * Available placement options for a scale bar's unit label.
+     *
+     * This is exposed as a flag type enum to support multiple placements.
+     *
+     * \since QGIS 4.4
+     */
+    enum class ScaleBarUnitLabelPlacement : int SIP_ENUM_BASETYPE( IntFlag )
+    {
+      BeforeBar = 1 << 1,                 //!< Vertically centered on the bar, before the bar begins
+      AfterBar = 1 << 2,                  //!< Vertically centered on the bar, after the bar ends
+      LeftAbove = 1 << 3,                 //!< Text centered over the left edge of the bar, above the bar
+      CenteredAbove = 1 << 4,             //!< Horizontally centered on the bar, above the bar
+      RightAbove = 1 << 5,                //!< Text centered over the right edge of the bar, above the bar
+      LeftBelow = 1 << 6,                 //!< Text centered over the left edge of the bar, below the bar
+      CenteredBelow = 1 << 7,             //!< Horizontally centered on the bar, below the bar
+      RightBelow = 1 << 8,                //!< Text centered over the right edge of the bar, below the bar
+      BeforeFirstDistanceLabel = 1 << 9,  //!< Placed before the first distance label
+      AfterLastDistanceLabel = 1 << 10,   //!< Placed after the last distance label
+      OnBarAfterFirstDivision = 1 << 11,  //!< Placed on top of the bar, after the first bar division
+      BeforeEveryDistanceLabel = 1 << 12, //!< Placed before every distance label (as part of the distance label text)
+      AfterEveryDistanceLabel = 1 << 13,  //!< Placed after every distance label (as part of the distance label text)
+    };
+    Q_ENUM( ScaleBarUnitLabelPlacement )
+
+    /**
+     * Available placement options for a scale bar's unit label.
+     *
+     * This is exposed as a flag type enum to support multiple placements.
+     *
+     * \since QGIS 4.4
+     */
+    Q_DECLARE_FLAGS( ScaleBarUnitLabelPlacements, ScaleBarUnitLabelPlacement )
+    Q_FLAG( ScaleBarUnitLabelPlacements )
 
     /**
      * Units for map grid values.
@@ -5972,6 +6169,18 @@ int QgisEvent = QEvent::User + 1;
     Q_ENUM( MapGridAnnotationType )
 
     /**
+     * Elevation profile range calculation methods.
+     *
+     * \since QGIS 4.4
+     */
+    enum class ElevationProfileRangeMethod : int
+    {
+      ManualRange = 0, //!< Distance/elevation ranges are manually set
+      FixedScale       //!< Distance and elevation ranges are calculated from fixed scales.
+    };
+    Q_ENUM( ElevationProfileRangeMethod )
+
+    /**
      * Input controller types.
      *
      * \since QGIS 3.34
@@ -6016,6 +6225,7 @@ int QgisEvent = QEvent::User + 1;
       SetTableComment = 1 << 2,   //!< Can set comments for tables via setTableComment() \since QGIS 3.44
       EditFieldDomain = 1 << 3,   //!< Can edit existing field domain \since QGIS 4.0
       DeleteFieldDomain = 1 << 4, //!< Can delete existing field domain \since QGIS 4.0
+      StyleStorage = 1 << 5,      //!< Can save/load styles to/from the database \since QGIS 4.4
     };
     Q_ENUM( DatabaseProviderConnectionCapability2 )
     Q_DECLARE_FLAGS( DatabaseProviderConnectionCapabilities2, DatabaseProviderConnectionCapability2 )
@@ -6583,14 +6793,40 @@ int QgisEvent = QEvent::User + 1;
     Q_FLAG( RasterBandStatistics )
 
     /**
+     * Interpolation source types.
+     *
+     * \since QGIS 4.4. Prior to 4.4 this was available as QgsInterpolator::SourceType.
+     */
+    enum class InterpolationSourceType : int
+    {
+      Points,  //!< Point source
+      StructureLines, //!< Structure lines
+      BreakLines, //!< Break lines
+    };
+    Q_ENUM( InterpolationSourceType )
+
+    /**
+     * Source for interpolated values from features.
+     *
+     * \since QGIS 4.4. Prior to 4.4 this was available as QgsInterpolator::ValueSource.
+     */
+    enum class InterpolationValueSource : int
+    {
+      Attribute, //!< Take value from feature's attribute
+      Z,         //!< Use feature's geometry Z values for interpolation
+      M,         //!< Use feature's geometry M values for interpolation
+    };
+    Q_ENUM( InterpolationValueSource )
+
+    /**
      * OGC SensorThings API versions.
      *
      * \since QGIS 4.2
      */
     enum class SensorThingsVersion : int
     {
-        Version1_1, //!< 1.1
-        Version2_0, //!< 2.0
+      Version1_1, //!< 1.1
+      Version2_0, //!< 2.0
     };
     Q_ENUM( SensorThingsVersion );
 
@@ -6883,6 +7119,237 @@ int QgisEvent = QEvent::User + 1;
       ForceDialog,          //!< Force the widget to be shown in a dialog
     };
     Q_ENUM( DockableWidgetInitialState )
+
+    /**
+     * Merge strategies for coverage cleaning operations.
+     *
+     * \since QGIS 4.4
+     */
+    enum class CoverageCleanOverlapMergeStrategy : int
+    {
+      LongestBorder = 0, //!< Polygon with longest common border is selected to merge overlapping polygons into
+      MaximumArea = 1,   //!< Polygon with largest area is selected to merge overlapping polygons into
+      MinimumArea = 2,   //!< Polygon with minimum area is selected to merge overlapping polygons into
+      MinimumIndex = 3,  //!< Polygon with smallest input index is selected to merge overlapping polygons into
+    };
+    Q_ENUM( CoverageCleanOverlapMergeStrategy )
+
+    /**
+     * PDF rendering flags.
+     *
+     * \since QGIS 4.4
+     */
+    enum class PdfRenderFlag : int SIP_ENUM_BASETYPE( IntFlag )
+    {
+      RenderTextAsText = 1 << 0, //!< Render text items as text objects, not painter paths
+    };
+    Q_ENUM( PdfRenderFlag )
+
+    /**
+     * PDF rendering flags.
+     *
+     * \since QGIS 4.4
+     */
+    Q_DECLARE_FLAGS( PdfRenderFlags, PdfRenderFlag )
+    Q_FLAG( PdfRenderFlags )
+
+
+    /**
+     * QGIS Server WMS Dimension default display types
+     *
+     * \note Prior to QGIS 4.4 this was available as QgsServerWmsDimensionProperties::WmsDimensionInfo::DefaultDisplay
+     *
+     * \since QGIS 4.4
+     */
+    enum class WmsDimensionDefaultDisplay : int
+    {
+      AllValues = 0,      //!< Display all values of the dimension
+      MinValue = 1,       //!< Display minimum value of the dimension
+      MaxValue = 2,       //!< Display maximum value of the dimension
+      ReferenceValue = 3, //!< Display a reference value
+    };
+    Q_ENUM( WmsDimensionDefaultDisplay )
+
+    /**
+     * Rubber band icon type.
+     *
+     * \since QGIS 4.4. Prior to QGIS 4.4 this was available as QgsRubberBand::IconType
+     */
+    enum class RubberBandIconType : int
+    {
+      NoIcon,        //!< No icon is used
+      CrossPlus,     //!< A cross is used to highlight points (+)
+      CrossX,        //!< A cross is used to highlight points (x)
+      Box,           //!< A box is used to highlight points (□)
+      Circle,        //!< A circle is used to highlight points (○)
+      BoxFilled,     //!< A filled box is used to highlight points (■)
+      Diamond,       //!< A diamond is used to highlight points (◇)
+      DiamondFilled, //!< A filled diamond is used to highlight points (◆)
+      SVG            //!< An SVG image is used to highlight points
+    };
+    Q_ENUM( RubberBandIconType )
+
+    /**
+     * Rubber band components.
+     *
+     * \since QGIS 4.4
+     */
+    enum class RubberBandComponent : int SIP_ENUM_BASETYPE( IntFlag )
+    {
+      Symbol = 1 << 0,       //!< Base symbol component
+      PreviewItems = 1 << 1, //!< Preview overlayer items
+    };
+    Q_ENUM( RubberBandComponent )
+
+    /**
+     * Rubber band components.
+     *
+     * \since QGIS 4.4
+     */
+    Q_DECLARE_FLAGS( RubberBandComponents, RubberBandComponent )
+    Q_FLAG( RubberBandComponents )
+
+    /**
+     * Icon types for icons shown in the user interface.
+     *
+     * \since QGIS 4.4
+     */
+    enum class UserInterfaceIconType : int
+    {
+      MainWindowToolbar, //!< Main window toolbar icons
+      DockedToolbar,     //!< Toolbars for docked windows
+    };
+    Q_ENUM( UserInterfaceIconType )
+
+    /**
+     * Algorithm to transform vector magnitude to length of arrow on the device in pixels.
+     *
+     * \note Prior to QGIS 4.4 this was available as QgsMeshRendererVectorArrowSettings::ArrowScalingMethod.
+     *
+     * \since QGIS 4.4
+     */
+    enum class VectorFieldArrowScalingMethod SIP_MONKEYPATCH_SCOPEENUM_UNNEST( QgsMeshRendererVectorArrowSettings, ArrowScalingMethod ) : int
+    {
+      MinMax = 0, //!< Scale vector magnitude linearly to fit in range of vectorFilterMin() and vectorFilterMax()
+      Scaled,     //!< Scale vector magnitude by factor scaleFactor()
+      Fixed       //!< Use fixed length fixedShaftLength() regardless of vector's magnitude
+    };
+    Q_ENUM( VectorFieldArrowScalingMethod )
+
+    /**
+     * Defines the symbology of vector field rendering.
+     *
+     * \note Prior to QGIS 4.4 this was available as QgsMeshRendererVectorSettings::Symbology.
+     *
+     * \since QGIS 4.4
+     */
+    enum class VectorFieldSymbology SIP_MONKEYPATCH_SCOPEENUM_UNNEST( QgsMeshRendererVectorSettings, Symbology ) : int
+    {
+      Arrows = 0,  //!< Displaying vector dataset with arrows
+      Streamlines, //!< Displaying vector dataset with streamlines
+      Traces,      //!< Displaying vector dataset with particle traces
+      WindBarbs    //!< Displaying vector dataset with wind barbs
+    };
+    Q_ENUM( VectorFieldSymbology )
+
+    /**
+     * Method used to define start points that are used to draw streamlines.
+     *
+     * \note Prior to QGIS 4.4 this was available as QgsMeshRendererVectorStreamlineSettings::SeedingStartPointsMethod.
+     *
+     * \since QGIS 4.4
+     */
+    enum class VectorFieldSeedingMethod SIP_MONKEYPATCH_SCOPEENUM_UNNEST( QgsMeshRendererVectorStreamlineSettings, SeedingStartPointsMethod ) : int
+    {
+      Gridded SIP_MONKEYPATCH_COMPAT_NAME( MeshGridded ) = 0, //!< Seeds start points on data grid or user regular grid
+      Random                                                  //!< Seeds start points randomly
+    };
+    Q_ENUM( VectorFieldSeedingMethod )
+
+    /**
+     * Defines how a raster vector field renderer reads the vectors from the raster bands.
+     *
+     * \since QGIS 4.4
+     */
+    enum class RasterVectorFieldSourceMode : int
+    {
+      CartesianComponents = 0, //!< Two bands holding the x and y components of the vectors
+      EncodedDirection,        //!< A single band holding integer coded compass directions, see Qgis::RasterDirectionEncoding
+    };
+    Q_ENUM( RasterVectorFieldSourceMode )
+
+    /**
+     * Schemes used to encode a compass direction as an integer raster value.
+     *
+     * These are the conventions of the D8 flow direction rasters produced by different software
+     *
+     * \since QGIS 4.4
+     */
+    enum class RasterDirectionEncoding : int
+    {
+      Esri = 0, //!< Esri: 1=E, 2=SE, 4=S, 8=SW, 16=W, 32=NW, 64=N, 128=NE
+      Grass,    //!< GRASS: 1=NE, 2=N, 3=NW, 4=W, 5=SW, 6=S, 7=SE, 8=E
+      Saga,     //!< SAGA: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW
+      PcRaster, //!< PCRaster: 1=SW, 2=S, 3=SE, 4=W, 6=E, 7=NW, 8=N, 9=NE
+    };
+    Q_ENUM( RasterDirectionEncoding )
+
+    /**
+     * Mathematical methods to use for solving linear matrix equations.
+     *
+     * \since QGIS 4.4
+     */
+    enum class LinearMatrixMethod : int
+    {
+      Lu = 0,               //!< Fast lower-upper (LU) decomposition (fails on singular/collinear matrices)
+      Svd = 1,              //!< Singular Value Decomposition (handles collinearity and rank deficiency)
+      LuWithSvdFallback = 2 //!< Try LU first; fallback to SVD on singularity
+    };
+    Q_ENUM( LinearMatrixMethod )
+
+    /**
+     * Defines how rows in attribute tables should be filtered.
+     *
+     * \note Prior to QGIS 4.4 this was available as QgsAttributeTableFilterModel::FilterMode.
+     *
+     * \since QGIS 4.4
+     */
+    enum class AttributeTableFilterMode : int
+    {
+      ShowAll,          //!< Show all features
+      ShowSelected,     //!< Show only selected features
+      ShowVisible,      //!< Show only visible features (depends on the map canvas)
+      ShowFilteredList, //!< Show only features whose IDs are on the filter list
+      ShowEdited,       //!< Show only features which have unsaved changes
+      ShowInvalid,      //!< Show only features not respecting constraints \since QGIS 3.30
+    };
+    Q_ENUM( AttributeTableFilterMode )
+
+    /**
+     * Point cloud output formats allowed for a point cloud destination.
+     *
+     * \since QGIS 4.4
+     */
+    enum class PointCloudOutputsTypes : int
+    {
+      All,     //!< All point cloud formats supported by the processing provider
+      OnlyVPC, //!< Only virtual point cloud formats (VPC and VPZ)
+    };
+    Q_ENUM( PointCloudOutputsTypes )
+
+    /**
+     * Style save format
+     *
+     * \since QGIS 4.4
+     */
+    enum class SaveStyleFormat : int SIP_ENUM_BASETYPE( IntFlag )
+    {
+      QML = 1 << 0, //!< QML style format
+      SLD = 1 << 1, //!< SLD style format
+    };
+    Q_ENUM( SaveStyleFormat )
+    Q_DECLARE_FLAGS( SaveStyleFormats, SaveStyleFormat )
+    Q_FLAG( SaveStyleFormats )
 
     /**
      * Identify search radius in mm
@@ -7178,6 +7645,10 @@ Q_DECLARE_OPERATORS_FOR_FLAGS( Qgis::ArcGisRestServiceCapabilities )
 Q_DECLARE_OPERATORS_FOR_FLAGS( Qgis::InstancedMaterialFlags )
 Q_DECLARE_OPERATORS_FOR_FLAGS( Qgis::Map3DDebugFlags )
 Q_DECLARE_OPERATORS_FOR_FLAGS( Qgis::SensorThingsExtensions )
+Q_DECLARE_OPERATORS_FOR_FLAGS( Qgis::PdfRenderFlags )
+Q_DECLARE_OPERATORS_FOR_FLAGS( Qgis::RubberBandComponents )
+Q_DECLARE_OPERATORS_FOR_FLAGS( Qgis::ScaleBarUnitLabelPlacements )
+Q_DECLARE_OPERATORS_FOR_FLAGS( Qgis::SaveStyleFormats )
 Q_DECLARE_METATYPE( Qgis::LayoutRenderFlags )
 Q_DECLARE_METATYPE( QTimeZone )
 
@@ -7237,7 +7708,7 @@ template<class Object> inline QgsSignalBlocker<Object> whileBlocking( Object *ob
 }
 
 //! Hash for QVariant
-CORE_EXPORT uint qHash( const QVariant &variant );
+CORE_EXPORT size_t qHash( const QVariant &variant );
 
 /**
  * Returns a string representation of a double
@@ -7530,6 +8001,44 @@ namespace qgis
   {
     return QList<T>( set.begin(), set.end() );
   }
+
+  /**
+   * Use unique_ptr_static_cast to static_cast a std::unique_ptr as equivalent of
+   * static_cast<Derived*>(unique_ptr_to_base.release()) with safe checking in debug
+   * mode.
+   *
+   * \param f std::unique_ptr to a base class
+   * \return std::unique_ptr to a derived class
+   */
+  template<typename To, typename From> inline std::unique_ptr<To> unique_ptr_static_cast( std::unique_ptr<From> f )
+  {
+    static_assert( ( std::is_base_of<From, To>::value ), "target type not derived from source type" );
+    Q_ASSERT( !f || dynamic_cast<To *>( f.get() ) != nullptr );
+    return std::unique_ptr<To>( static_cast<To *>( f.release() ) );
+  }
+
+  /**
+   * dynamic_cast a std::unique_ptr. If cast fails, \a f is unchanged. If cast succeeds, memory
+   * ownership is transferred to returned unique_ptr and \a f is empty
+   *
+   * \param f std::unique_ptr to a base class
+   * \return std::unique_ptr to a derived class
+   */
+  template<typename To, typename From> inline std::unique_ptr<To> unique_ptr_dynamic_cast( std::unique_ptr<From> &&f )
+  {
+    static_assert( ( std::is_base_of<From, To>::value ), "target type not derived from source type" );
+    if ( To *casted = dynamic_cast<To *>( f.get() ) )
+    {
+      return std::unique_ptr< To >( dynamic_cast<To *>( f.release() ) );
+    }
+    else
+    {
+      //could not cast
+      return nullptr;
+    }
+  }
+
+
 } //namespace qgis
 
 ///@endcond

@@ -1174,6 +1174,52 @@ class TestQgsVectorLayer(QgisTestCase, FeatureSourceTestCase):
         self.assertEqual(joinLayer.featureCount(), 3)  # deleteCascade activated
         self.assertEqual(joinLayer2.featureCount(), 4)  # deleteCascade deactivated
 
+    def test_DeleteAllVertices(self):
+        """Deleting all vertices must leave a null geometry."""
+
+        layer = QgsVectorLayer("LineString?field=f:int", "addfeat", "memory")
+        f = QgsFeature()
+        f.setAttributes([1])
+        f.setGeometry(
+            QgsGeometry.fromPolylineXY(
+                [QgsPointXY(0, 0), QgsPointXY(1, 0), QgsPointXY(2, 0)]
+            )
+        )
+        self.assertTrue(layer.dataProvider().addFeatures([f]))
+        layer.startEditing()
+        res = layer.deleteVertices(1, [0, 1, 2])
+        self.assertEqual(res, Qgis.VectorEditResult.EmptyGeometry)
+        g = layer.getGeometry(1)
+        self.assertTrue(g.isNull())
+        self.assertTrue(g.isEmpty())
+        layer.rollBack()
+
+    def test_DeleteSomeVertices(self):
+        """Deleting some vertices must leave a non empty geometry."""
+
+        layer = QgsVectorLayer("LineString?field=f:int", "addfeat", "memory")
+        f = QgsFeature()
+        f.setAttributes([1])
+        f.setGeometry(
+            QgsGeometry.fromPolylineXY(
+                [QgsPointXY(0, 0), QgsPointXY(1, 0), QgsPointXY(2, 0)]
+            )
+        )
+        self.assertTrue(layer.dataProvider().addFeatures([f]))
+        layer.startEditing()
+        res = layer.deleteVertices(1, [0])
+        self.assertEqual(res, Qgis.VectorEditResult.Success)
+        self.assertFalse(layer.getGeometry(1).isNull())
+        self.assertFalse(layer.getGeometry(1).isEmpty())
+        layer.rollBack()
+
+        layer.startEditing()
+        res = layer.deleteVertex(1, 0)
+        self.assertEqual(res, Qgis.VectorEditResult.Success)
+        self.assertFalse(layer.getGeometry(1).isNull())
+        self.assertFalse(layer.getGeometry(1).isEmpty())
+        layer.rollBack()
+
     # CHANGE ATTRIBUTE
 
     def test_ChangeAttribute(self):
@@ -2677,6 +2723,20 @@ class TestQgsVectorLayer(QgisTestCase, FeatureSourceTestCase):
         fet = next(layer.getFeatures())
         self.assertEqual(fet["test2"], 0)
 
+        # expressionField methods with invalid indexes should not crash
+        self.assertEqual(layer.expressionField(42), "")
+        self.assertEqual(layer.expressionField(-42), "")
+
+        layer.updateExpressionField(42, "foo")
+        layer.updateExpressionField(-42, "bar")
+        self.assertEqual(layer.expressionField(idx), "sum(test2)")
+        self.assertEqual(layer.fields().count(), cnt + 1)
+
+        layer.removeExpressionField(42)
+        self.assertEqual(layer.fields().count(), cnt + 1)
+        layer.removeExpressionField(-42)
+        self.assertEqual(layer.fields().count(), cnt + 1)
+
     def test_ExpressionFieldEllipsoidLengthCalculation(self):
         # create a temporary layer
         temp_layer = QgsVectorLayer(
@@ -3930,15 +3990,15 @@ class TestQgsVectorLayer(QgisTestCase, FeatureSourceTestCase):
         metadata.setFees("a handful of roos")
         layer.setMetadata(metadata)
 
-        # clone layer
-        clone = layer.clone()
-
-        self.assertEqual(layer.metadata().fees(), "a handful of roos")
-
         # generate xml from layer
         layer_doc = QDomDocument("doc")
         layer_elem = layer_doc.createElement("maplayer")
         layer.writeLayerXml(layer_elem, layer_doc, QgsReadWriteContext())
+
+        # clone layer
+        clone = layer.clone()
+
+        self.assertEqual(clone.metadata().fees(), "a handful of roos")
 
         # generate xml from clone
         clone_doc = QDomDocument("doc")

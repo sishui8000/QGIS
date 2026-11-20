@@ -1,6 +1,7 @@
 // Include auto-generated SIP files
 %Include auto_generated/qgis.sip
 %Include auto_generated/qgsabstractcontentcache.sip
+%Include auto_generated/qgsacademicreference.sip
 %Include auto_generated/qgsaggregatecalculator.sip
 %Include auto_generated/qgsalignrasterdata.sip
 %Include auto_generated/qgsanimatedicon.sip
@@ -92,6 +93,7 @@
 %Include auto_generated/qgsinterval.sip
 %Include auto_generated/qgsjsonutils.sip
 %Include auto_generated/qgslayerdefinition.sip
+%Include auto_generated/qgslayerrenderingsettings.sip
 %Include auto_generated/qgslayernotesutils.sip
 %Include auto_generated/qgslegendrenderer.sip
 %Include auto_generated/qgslegendsettings.sip
@@ -130,6 +132,7 @@
 %Include auto_generated/qgsmaskrendersettings.sip
 %Include auto_generated/qgsmathutils.sip
 %Include auto_generated/qgsmatrix4x4.sip
+%Include auto_generated/qgsmatrixsolver.sip
 %Include auto_generated/qgsmeasureutils.sip
 %Include auto_generated/qgsmessagelog.sip
 %Include auto_generated/qgsmessageoutput.sip
@@ -161,6 +164,7 @@
 %Include auto_generated/qgsreadwritelocker.sip
 %Include auto_generated/qgsrecentstylehandler.sip
 %Include auto_generated/qgsrelation.sip
+%Include auto_generated/qgspicturerasterizer.sip
 %Include auto_generated/qgspolymorphicrelation.sip
 %Include auto_generated/qgsrelationcontext.sip
 %Include auto_generated/qgsremappingproxyfeaturesink.sip
@@ -240,6 +244,7 @@
 %Include auto_generated/./3d/materials/qgsphongmaterialsettings.sip
 %Include auto_generated/./3d/materials/qgsphongtexturedmaterialsettings.sip
 %Include auto_generated/./3d/materials/qgssimplelinematerialsettings.sip
+%Include auto_generated/./3d/materials/qgsunlitmaterialsettings.sip
 %Include auto_generated/actions/qgsaction.sip
 %Include auto_generated/actions/qgsactionmanager.sip
 %Include auto_generated/actions/qgsactionscope.sip
@@ -339,6 +344,7 @@
 %Include auto_generated/expression/qgsexpressionnodeimpl.sip
 %Include auto_generated/fieldformatter/qgscheckboxfieldformatter.sip
 %Include auto_generated/fieldformatter/qgsdatetimefieldformatter.sip
+%Include auto_generated/fieldformatter/qgsenumerationfieldformatter.sip
 %Include auto_generated/fieldformatter/qgsfallbackfieldformatter.sip
 %Include auto_generated/fieldformatter/qgskeyvaluefieldformatter.sip
 %Include auto_generated/fieldformatter/qgslistfieldformatter.sip
@@ -613,17 +619,26 @@
 %Include auto_generated/processing/qgsprocessingalgrunnertask.sip
 %Include auto_generated/processing/qgsprocessingbatch.sip
 %Include auto_generated/processing/qgsprocessingcontext.sip
+%Include auto_generated/processing/qgsprocessingdefaultstyleregistry.sip
 %Include auto_generated/processing/qgsprocessingfeedback.sip
 %Include auto_generated/processing/qgsprocessingoutputs.sip
+%Include auto_generated/processing/qgsprocessingmodelprovider.sip
 %Include auto_generated/processing/qgsprocessingparameteraggregate.sip
 %Include auto_generated/processing/qgsprocessingparameterdxflayers.sip
 %Include auto_generated/processing/qgsprocessingparameterfieldmap.sip
+%Include auto_generated/processing/qgsprocessingparameterheatmappixelsize.sip
+%Include auto_generated/processing/qgsprocessingparameterinterpolationpixelsize.sip
+%Include auto_generated/processing/qgsprocessingparameterinterpolationsource.sip
 %Include auto_generated/processing/qgsprocessingparametermeshdataset.sip
+%Include auto_generated/processing/qgsprocessingparameterreliefcolors.sip
 %Include auto_generated/processing/qgsprocessingparameters.sip
+%Include auto_generated/processing/qgsprocessingparametertileextentmaxzoomlist.sip
 %Include auto_generated/processing/qgsprocessingparametertininputlayers.sip
 %Include auto_generated/processing/qgsprocessingparametertype.sip
 %Include auto_generated/processing/qgsprocessingparametervectortilewriterlayers.sip
 %Include auto_generated/processing/qgsprocessingparameteralignrasterlayers.sip
+%Include auto_generated/processing/qgsprocessingpostprocessor.sip
+%Include auto_generated/processing/qgsprocessingprojectmodelprovider.sip
 %Include auto_generated/processing/qgsprocessingprovider.sip
 %Include auto_generated/processing/qgsprocessingregistry.sip
 %Include auto_generated/processing/qgsprocessingutils.sip
@@ -661,6 +676,9 @@
 %Include auto_generated/providers/qgsproviderutils.sip
 %Include auto_generated/providers/arcgis/qgsarcgisportalutils.sip
 %Include auto_generated/providers/arcgis/qgsarcgisrestutils.sip
+%Include auto_generated/providers/arcgis/qgsesriarcadeconverter.sip
+%Include auto_generated/providers/arcgis/qgsesriarcadescript.sip
+%Include auto_generated/providers/arcgis/qgsvbscript.sip
 %Include auto_generated/providers/memory/qgsmemoryproviderutils.sip
 %Include auto_generated/providers/sensorthings/qgssensorthingsutils.sip
 %Include auto_generated/raster/qgsrasterattributetable.sip
@@ -712,11 +730,13 @@
 %Include auto_generated/raster/qgsrastershader.sip
 %Include auto_generated/raster/qgsrastershaderfunction.sip
 %Include auto_generated/raster/qgsrastertransparency.sip
+%Include auto_generated/raster/qgsrastervectorfieldrenderer.sip
 %Include auto_generated/raster/qgsrasterviewport.sip
 %Include auto_generated/raster/qgssinglebandcolordatarenderer.sip
 %Include auto_generated/raster/qgssinglebandgrayrenderer.sip
 %Include auto_generated/raster/qgssinglebandpseudocolorrenderer.sip
 %Include auto_generated/raster/qgsrastersinglecolorrenderer.sip
+%Include auto_generated/raster/qgssortedrasterblockindex.sip
 %Include auto_generated/scalebar/qgsdoubleboxscalebarrenderer.sip
 %Include auto_generated/scalebar/qgshollowscalebarrenderer.sip
 %Include auto_generated/scalebar/qgsnumericscalebarrenderer.sip
@@ -852,6 +872,12 @@
 %Include auto_generated/vector/qgsvectorlayerundocommand.sip
 %Include auto_generated/vector/qgsvectorlayerundopassthroughcommand.sip
 %Include auto_generated/vector/qgsvectorlayerutils.sip
+%Include auto_generated/vectorfield/qgsvectorfieldarrowsettings.sip
+%Include auto_generated/vectorfield/qgsvectorfieldsettings.sip
+%Include auto_generated/vectorfield/qgsvectorfieldstreamlinesettings.sip
+%Include auto_generated/vectorfield/qgsvectorfieldtraceanimationgenerator.sip
+%Include auto_generated/vectorfield/qgsvectorfieldtracessettings.sip
+%Include auto_generated/vectorfield/qgsvectorfieldwindbarbsettings.sip
 %Include auto_generated/vectortile/qgsmapboxglstyleconverter.sip
 %Include auto_generated/vectortile/qgsvectortilebasiclabeling.sip
 %Include auto_generated/vectortile/qgsvectortilebasicrenderer.sip
@@ -862,6 +888,7 @@
 %Include auto_generated/vectortile/qgsvectortileutils.sip
 %Include auto_generated/vectortile/qgsvectortilewriter.sip
 %Include auto_generated/vectortile/qgsvtpktiles.sip
+%Include auto_generated/web/qgshtmlrendersettings.sip
 %Include auto_generated/auth/qgsauthcertutils.sip
 %Include auto_generated/auth/qgsauthconfig.sip
 %Include auto_generated/auth/qgsauthconfigurationstorage.sip

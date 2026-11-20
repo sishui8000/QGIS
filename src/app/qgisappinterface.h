@@ -44,7 +44,7 @@ class APP_EXPORT QgisAppInterface : public QgisInterface
   public:
     /**
      * Constructor.
-     * \param qgis Pointer to the QgisApp object
+     * \param qgisapp Pointer to the QgisApp object
      */
     QgisAppInterface( QgisApp *qgisapp );
 
@@ -52,6 +52,7 @@ class APP_EXPORT QgisAppInterface : public QgisInterface
     QgisAppInterface &operator=( QgisAppInterface const & ) = delete;
 
     QgsPluginManagerInterface *pluginManagerInterface() override;
+    void showPluginManager( int tabIndex = -1, const QString &searchTerm = QString() ) override;
 
     QgsLayerTreeView *layerTreeView() override;
 
@@ -120,6 +121,7 @@ class APP_EXPORT QgisAppInterface : public QgisInterface
     void showLayoutManager() override;
     QList<QgsLayoutDesignerInterface *> openLayoutDesigners() override;
     QgsLayoutDesignerInterface *openLayoutDesigner( QgsMasterLayoutInterface *layout ) override;
+    QgsModelDesignerDialog *openModelDesigner( QgsProcessingModelAlgorithm *layout ) override;
     void showOptionsDialog( QWidget *parent = nullptr, const QString &currentPage = QString() ) override;
     void showProjectPropertiesDialog( const QString &currentPage = QString() ) override;
     QMap<QString, QVariant> defaultStyleSheetOptions() override;
@@ -138,6 +140,8 @@ class APP_EXPORT QgisAppInterface : public QgisInterface
     void removePluginWebMenu( const QString &name, QAction *action ) override;
     void addPluginToMeshMenu( const QString &name, QAction *action ) override;
     void removePluginMeshMenu( const QString &name, QAction *action ) override;
+    void addPluginToProcessingMenu( const QString &name, QAction *action ) override;
+    void removePluginProcessingMenu( const QString &name, QAction *action ) override;
     void insertAddLayerAction( QAction *action ) override;
     void removeAddLayerAction( QAction *action ) override;
     void addDockWidget( Qt::DockWidgetArea area, QDockWidget *dockwidget ) override;
@@ -190,6 +194,7 @@ class APP_EXPORT QgisAppInterface : public QgisInterface
     QMenu *databaseMenu() override;
     QMenu *webMenu() override;
     QMenu *meshMenu() override;
+    QMenu *processingMenu() override;
     QMenu *firstRightStandardMenu() override;
     QMenu *windowMenu() override;
     QMenu *helpMenu() override;
@@ -209,6 +214,7 @@ class APP_EXPORT QgisAppInterface : public QgisInterface
     QToolBar *vectorToolBar() override;
     QToolBar *databaseToolBar() override;
     QToolBar *webToolBar() override;
+    QToolBar *processingToolboxToolBar() override;
     QActionGroup *mapToolActionGroup() override;
     QAction *actionNewProject() override;
     QAction *actionOpenProject() override;
@@ -299,12 +305,14 @@ class APP_EXPORT QgisAppInterface : public QgisInterface
     QAction *actionPluginListSeparator() override;
     QAction *actionShowPythonDialog() override;
     QAction *actionToggleFullScreen() override;
+    QAction *actionNew3DMapCanvas() override;
     QAction *actionOptions() override;
     QAction *actionCustomProjection() override;
     QAction *actionHelpContents() override;
     QAction *actionQgisHomePage() override;
     QAction *actionCheckQgisVersion() override;
     QAction *actionAbout() override;
+    QAction *actionEditFeaturesInPlace() override;
 
     bool openFeatureForm( QgsVectorLayer *l, QgsFeature &f, bool updateFeatureOnly = false, bool showModal = true ) override;
     QgsAttributeDialog *getFeatureForm( QgsVectorLayer *layer, QgsFeature &feature ) override;

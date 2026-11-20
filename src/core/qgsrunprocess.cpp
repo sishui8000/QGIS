@@ -220,6 +220,10 @@ int QgsBlockingProcess::run( QgsFeedback *feedback )
     QProcess p;
     const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     p.setProcessEnvironment( env );
+    if ( !mWorkingDir.isEmpty() )
+    {
+      p.setWorkingDirectory( mWorkingDir );
+    }
 
     QEventLoop loop;
     // connecting to aboutToQuit avoids an on-going process to remain stalled
@@ -252,11 +256,17 @@ int QgsBlockingProcess::run( QgsFeedback *feedback )
 
     connect( &p, &QProcess::readyReadStandardOutput, &p, [&p, this] {
       const QByteArray ba = p.readAllStandardOutput();
-      mStdoutHandler( ba );
+      if ( mStdoutHandler )
+      {
+        mStdoutHandler( ba );
+      }
     } );
     connect( &p, &QProcess::readyReadStandardError, &p, [&p, this] {
       const QByteArray ba = p.readAllStandardError();
-      mStderrHandler( ba );
+      if ( mStderrHandler )
+      {
+        mStderrHandler( ba );
+      }
     } );
     p.start( mProcess, mArguments, QProcess::Unbuffered | QProcess::ReadWrite );
     if ( !p.waitForStarted() )
@@ -270,8 +280,14 @@ int QgsBlockingProcess::run( QgsFeedback *feedback )
       loop.exec();
     }
 
-    mStdoutHandler( p.readAllStandardOutput() );
-    mStderrHandler( p.readAllStandardError() );
+    if ( mStderrHandler )
+    {
+      mStdoutHandler( p.readAllStandardOutput() );
+    }
+    if ( mStderrHandler )
+    {
+      mStderrHandler( p.readAllStandardError() );
+    }
   };
 
   if ( requestMadeFromMainThread )
@@ -290,6 +306,16 @@ int QgsBlockingProcess::run( QgsFeedback *feedback )
   mProcessError = error;
   return result;
 }
+
+QString QgsBlockingProcess::workingDirectory() const
+{
+  return mWorkingDir;
+}
+
+void QgsBlockingProcess::setWorkingDirectory( const QString &directory )
+{
+  mWorkingDir = directory;
+};
 
 QProcess::ExitStatus QgsBlockingProcess::exitStatus() const
 {

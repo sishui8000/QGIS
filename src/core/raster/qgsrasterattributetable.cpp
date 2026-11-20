@@ -488,12 +488,17 @@ bool QgsRasterAttributeTable::insertRow( int position, const QVariantList &rowDa
 
   for ( int idx = 0; idx < mFields.count(); ++idx )
   {
+    const QMetaType::Type type = mFields.at( idx ).type;
     QVariant cell( rowData[idx] );
-    if ( !cell.canConvert( mFields.at( idx ).type ) || !cell.convert( mFields.at( idx ).type ) )
+    if ( type == QMetaType::Type::QDateTime && cell.toString().isEmpty() )
+    {
+      dataValid.append( QVariant() );
+    }
+    else if ( !cell.canConvert( QMetaType( type ) ) || !cell.convert( QMetaType( type ) ) )
     {
       if ( errorMessage )
       {
-        *errorMessage = tr( "Row data at column %1 cannot be converted to field type (%2)." ).arg( idx ).arg( QVariant::typeToName( mFields.at( idx ).type ) );
+        *errorMessage = tr( "Row data at column %1 cannot be converted to field type (%2)." ).arg( idx ).arg( QMetaType( type ).name() );
       }
       return false;
     }
@@ -547,7 +552,7 @@ bool QgsRasterAttributeTable::writeToFile( const QString &path, QString *errorMe
 
   cleanedPath = QgsFileUtils::ensureFileNameHasExtension( cleanedPath, { { u".vat"_s } } );
 
-  writer.reset( QgsVectorFileWriter::create( cleanedPath, qgisFields(), Qgis::WkbType::NoGeometry, QgsCoordinateReferenceSystem(), QgsCoordinateTransformContext(), options ) );
+  writer = QgsVectorFileWriter::create( cleanedPath, qgisFields(), Qgis::WkbType::NoGeometry, QgsCoordinateReferenceSystem(), QgsCoordinateTransformContext(), options );
 
   cleanedPath.append( u".dbf"_s );
 
@@ -771,7 +776,8 @@ bool QgsRasterAttributeTable::setValue( const int row, const int column, const Q
   }
 
   QVariant newVal = value;
-  if ( column >= mFields.length() || !value.canConvert( mFields.at( column ).type ) || !newVal.convert( mFields.at( column ).type ) )
+  QMetaType fieldType = QMetaType( mFields.at( column ).type );
+  if ( column >= mFields.length() || !value.canConvert( fieldType ) || !newVal.convert( fieldType ) )
   {
     return false;
   }
@@ -1094,7 +1100,7 @@ QList<Qgis::RasterAttributeTableFieldUsage> QgsRasterAttributeTable::valueAndCol
   return valueColorUsages;
 }
 
-QgsRasterAttributeTable *QgsRasterAttributeTable::createFromRaster( QgsRasterLayer *raster, int *bandNumber )
+std::unique_ptr<QgsRasterAttributeTable> QgsRasterAttributeTable::createFromRaster( QgsRasterLayer *raster, int *bandNumber )
 {
   if ( !raster || !raster->dataProvider() || !raster->isValid() )
   {
@@ -1110,7 +1116,7 @@ QgsRasterAttributeTable *QgsRasterAttributeTable::createFromRaster( QgsRasterLay
 
   if ( const QgsPalettedRasterRenderer *palettedRenderer = dynamic_cast<const QgsPalettedRasterRenderer *>( renderer ) )
   {
-    QgsRasterAttributeTable *rat = new QgsRasterAttributeTable();
+    auto rat = std::make_unique<QgsRasterAttributeTable>();
     rat->appendField( u"Value"_s, Qgis::RasterAttributeTableFieldUsage::MinMax, QMetaType::Type::Double );
     rat->appendField( u"Class"_s, Qgis::RasterAttributeTableFieldUsage::Name, QMetaType::Type::QString );
     rat->appendField( u"Red"_s, Qgis::RasterAttributeTableFieldUsage::Red, QMetaType::Type::Int );
@@ -1138,7 +1144,7 @@ QgsRasterAttributeTable *QgsRasterAttributeTable::createFromRaster( QgsRasterLay
     {
       if ( const QgsColorRampShader *shaderFunction = dynamic_cast<const QgsColorRampShader *>( shader->rasterShaderFunction() ) )
       {
-        QgsRasterAttributeTable *rat = new QgsRasterAttributeTable();
+        auto rat = std::make_unique<QgsRasterAttributeTable>();
         switch ( shaderFunction->colorRampType() )
         {
           case Qgis::ShaderInterpolationMethod::Linear:
@@ -1552,7 +1558,7 @@ QgsGradientColorRamp QgsRasterAttributeTable::colorRamp( QStringList &labels, co
   return ramp;
 }
 
-QgsRasterRenderer *QgsRasterAttributeTable::createRenderer( QgsRasterDataProvider *provider, const int bandNumber, const int classificationColumn )
+std::unique_ptr<QgsRasterRenderer> QgsRasterAttributeTable::createRenderer( QgsRasterDataProvider *provider, const int bandNumber, const int classificationColumn )
 {
   if ( !provider )
   {
@@ -1634,7 +1640,7 @@ QgsRasterRenderer *QgsRasterAttributeTable::createRenderer( QgsRasterDataProvide
     renderer = std::move( pseudoColorRenderer );
   }
 
-  return renderer.release();
+  return renderer;
 }
 
 QList<QList<QVariant> > QgsRasterAttributeTable::orderedRows() const

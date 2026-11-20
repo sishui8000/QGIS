@@ -22,6 +22,7 @@
 
 #include <memory>
 
+#include "qgis.h"
 #include "qgis_core.h"
 #include "qgis_sip.h"
 
@@ -52,11 +53,18 @@ class CORE_EXPORT QgsPdfRenderer
     /**
      * Constructs a PDF renderer for the file at the specified \a path.
      */
-    QgsPdfRenderer( const QString &path );
+    QgsPdfRenderer( const QString &path, Qgis::PdfRenderFlags flags = Qgis::PdfRenderFlags() );
     ~QgsPdfRenderer();
 
     QgsPdfRenderer( const QgsPdfRenderer &other ) = delete;
     QgsPdfRenderer &operator=( const QgsPdfRenderer &other ) = delete;
+
+    /**
+     * Returns TRUE if the PDF rendering capability is available on the system.
+     *
+     * \since QGIS 4.4
+     */
+    static bool isAvailable();
 
     /**
      * Returns the file path of the associated PDF file.
@@ -93,6 +101,7 @@ class CORE_EXPORT QgsPdfRenderer
 #endif
 
     QString mPath;
+    Qgis::PdfRenderFlags mFlags;
 
 #ifdef HAVE_PDF4QT
     std::unique_ptr< PdfDocumentContainer> mDocumentContainer;

@@ -57,7 +57,7 @@ QgsMapCanvasDockWidget::QgsMapCanvasDockWidget( const QString &name, QWidget *pa
   qgis::down_cast<QVBoxLayout *>( layout() )->setSpacing( 0 );
 
   setWindowTitle( mCanvasName );
-  mToolbar->setIconSize( QgisApp::instance()->iconSize( true ) );
+  mToolbar->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
 
   mMapCanvas = new QgsMapCanvas( this );
   mMapCanvas->setFlags( Qgis::MapCanvasFlag::ShowMainAnnotationLayer );
@@ -80,7 +80,7 @@ QgsMapCanvasDockWidget::QgsMapCanvasDockWidget( const QString &name, QWidget *pa
 
   mMainWidget->layout()->addWidget( mMapCanvas );
 
-  mMenu = new QMenu();
+  mMenu = new QMenu( this );
   connect( mMenu, &QMenu::aboutToShow, this, &QgsMapCanvasDockWidget::menuAboutToShow );
 
   mToolbar->addSeparator();
@@ -93,8 +93,8 @@ QgsMapCanvasDockWidget::QgsMapCanvasDockWidget( const QString &name, QWidget *pa
   btnMapThemes->setMenu( mMenu );
   mToolbar->addWidget( btnMapThemes );
 
-  QMenu *settingsMenu = new QMenu();
   QToolButton *settingsButton = new QToolButton();
+  QMenu *settingsMenu = new QMenu( settingsButton );
   settingsButton->setAutoRaise( true );
   settingsButton->setToolTip( tr( "View Settings" ) );
   settingsButton->setMenu( settingsMenu );

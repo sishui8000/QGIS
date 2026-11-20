@@ -60,7 +60,6 @@ BuildRequires:  python3-gdal
 BuildRequires:  python3-jinja2
 BuildRequires:  python3-OWSLib
 BuildRequires:  python3-psycopg2
-BuildRequires:  python3-pygments
 BuildRequires:  python3-pyqt6-devel
 BuildRequires:  python3-PyYAML
 BuildRequires:  python3-qscintilla-qt6
@@ -162,7 +161,6 @@ Requires:       python3-jinja2
 Requires:       python3-OWSLib
 Requires:       python3-packaging
 Requires:       python3-psycopg2
-Requires:       python3-pygments
 Requires:       python3-pyqt6
 Requires:       python3-PyYAML
 Requires:       python3-qscintilla-qt6
@@ -190,9 +188,6 @@ Please refer to %{name}-server-README.fedora for details!
 
 # Remove executable permissions from source code files
 find . \( -name "*.cpp" -o -name "*.h" \) -type f -perm /111 -execdir chmod -x {} \+
-
-# Move installation of libPdf4QtLibCore.so from /usr/usr/lib/ to /usr/lib64
-sed -i 's|PDF4QT_INSTALL_LIB_DIR usr/${PDF4QT_INSTALL_LIB_DIR_IMPL}|PDF4QT_INSTALL_LIB_DIR %{_libdir}|' external/PDF4QT/CMakeLists.txt
 
 # Readme file for QGIS server configuration HTTPD and Nginx example
 install -pm0644 %{SOURCE1} .

@@ -47,6 +47,7 @@
 #include "qgsmaptip.h"
 #include "qgsmaskingwidget.h"
 #include "qgsmessagebar.h"
+#include "qgsmessagebaritem.h"
 #include "qgsmetadatawidget.h"
 #include "qgsnative.h"
 #include "qgsnewauxiliaryfielddialog.h"
@@ -1501,13 +1502,13 @@ void QgsVectorLayerProperties::addWmsDimensionInfoToTreeWidget( const QgsMapLaye
 
   QTreeWidgetItem *childWmsDimensionDefaultValue = new QTreeWidgetItem();
   childWmsDimensionDefaultValue->setText( 0, tr( "Default display" ) );
-  childWmsDimensionDefaultValue->setText( 1, QgsMapLayerServerProperties::wmsDimensionDefaultDisplayLabels().value( wmsDim.defaultDisplayType ) );
+  childWmsDimensionDefaultValue->setText( 1, QgsMapLayerServerProperties::wmsDimensionDefaultDisplayDescriptions().value( wmsDim.defaultDisplayType ) );
   childWmsDimensionDefaultValue->setFlags( Qt::ItemIsEnabled );
   wmsDimensionItem->addChild( childWmsDimensionDefaultValue );
 
   QTreeWidgetItem *childWmsDimensionRefValue = new QTreeWidgetItem();
   childWmsDimensionRefValue->setText( 0, tr( "Reference value" ) );
-  childWmsDimensionRefValue->setText( 1, wmsDim.referenceValue.toString() );
+  childWmsDimensionRefValue->setText( 1, wmsDim.referenceValue().toString() );
   childWmsDimensionRefValue->setFlags( Qt::ItemIsEnabled );
   wmsDimensionItem->addChild( childWmsDimensionRefValue );
 
@@ -1881,6 +1882,7 @@ void QgsVectorLayerProperties::initMapTipPreview()
   mMapTipPreview = new QgsWebView( mMapTipPreviewContainer );
   mMapTipPreviewLayout->addWidget( mMapTipPreview );
 
+  mMapTipPreview->setOpenExternalLinks( true );
   mMapTipPreview->page()->settings()->setAttribute( QWebSettings::DeveloperExtrasEnabled, true );
   mMapTipPreview->page()->settings()->setAttribute( QWebSettings::JavascriptEnabled, true );
   mMapTipPreview->page()->settings()->setAttribute( QWebSettings::LocalStorageEnabled, true );

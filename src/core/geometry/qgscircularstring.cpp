@@ -322,11 +322,54 @@ QDomElement QgsCircularString::asGml3( QDomDocument &doc, int precision, const Q
 }
 
 
-json QgsCircularString::asJsonObject( int precision ) const
+json QgsCircularString::asJsonObject( int precision, Qgis::GeoJsonProfile profile ) const
 {
-  // GeoJSON does not support curves
-  std::unique_ptr< QgsLineString > line( curveToLine() );
-  return line->asJsonObject( precision );
+  switch ( profile )
+  {
+    case Qgis::GeoJsonProfile::Legacy:
+    case Qgis::GeoJsonProfile::Rfc7946:
+    {
+      std::unique_ptr< QgsLineString > line( curveToLine() );
+      return line->asJsonObject( precision, profile );
+    }
+    case Qgis::GeoJsonProfile::JsonFg:
+    case Qgis::GeoJsonProfile::JsonFgPlus:
+    {
+      QgsPointSequence pts;
+      points( pts );
+      // Work around the 11 points limit
+      constexpr int MAX_POINT = 11;
+      if ( pts.size() > MAX_POINT )
+      {
+        json geometries = json::array();
+        json subCs = { { "type", "CircularString" } };
+        subCs["coordinates"] = json::array();
+        for ( int i = 0; i < pts.size(); i++ )
+        {
+          const json pointCoords = pts[i].asJsonObject( precision, profile )["coordinates"];
+          subCs["coordinates"].push_back( pointCoords );
+          if ( subCs["coordinates"].size() == MAX_POINT )
+          {
+            geometries.push_back( subCs );
+            // Clear array
+            subCs["coordinates"] = json::array();
+            subCs["coordinates"].push_back( pointCoords );
+          }
+        }
+        // Last one (if any)
+        if ( subCs["coordinates"].size() > 1 )
+        {
+          geometries.push_back( subCs );
+        }
+        return { { "type", "CompoundCurve" }, { "geometries", geometries } };
+      }
+      else
+      {
+        return { { "type", "CircularString" }, { "coordinates", QgsGeometryUtils::pointsToJson( pts, precision, profile ) } };
+      }
+    }
+  }
+  BUILTIN_UNREACHABLE
 }
 
 bool QgsCircularString::isValid( QString &error, Qgis::GeometryValidityFlags flags ) const
@@ -574,38 +617,7 @@ bool QgsCircularString::insertVertex( QgsVertexId position, const QgsPoint &vert
   return true;
 }
 
-bool QgsCircularString::deleteVertex( QgsVertexId position )
-{
-  int nVertices = this->numPoints();
-
-  if ( position.vertex < 0 || position.vertex > ( nVertices - 1 ) )
-  {
-    return false;
-  }
-
-  if ( nVertices < 4 ) //circular string must have at least 3 vertices
-  {
-    clear();
-    return true;
-  }
-
-  if ( position.vertex < ( nVertices - 2 ) )
-  {
-    //remove this and the following vertex
-    deleteVertex( position.vertex + 1 );
-    deleteVertex( position.vertex );
-  }
-  else //remove this and the preceding vertex
-  {
-    deleteVertex( position.vertex );
-    deleteVertex( position.vertex - 1 );
-  }
-
-  clearCache(); //set bounding box invalid
-  return true;
-}
-
-void QgsCircularString::deleteVertex( int i )
+void QgsCircularString::removeVertexAt( int i )
 {
   mX.remove( i );
   mY.remove( i );
@@ -680,13 +692,13 @@ bool QgsCircularString::deleteVertices( const QSet<QgsVertexId> &positions )
 
     if ( currentVertexNr < nVertices - 2 )
     {
-      deleteVertex( currentVertexNr + 1 );
-      deleteVertex( currentVertexNr );
+      removeVertexAt( currentVertexNr + 1 );
+      removeVertexAt( currentVertexNr );
     }
     else
     {
-      deleteVertex( currentVertexNr );
-      deleteVertex( currentVertexNr - 1 );
+      removeVertexAt( currentVertexNr );
+      removeVertexAt( currentVertexNr - 1 );
     }
     nVertices -= 2;
   }

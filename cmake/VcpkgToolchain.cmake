@@ -17,6 +17,9 @@ endif()
 if(WITH_GUI)
   list(APPEND VCPKG_MANIFEST_FEATURES "gui")
 endif()
+if(WITH_HANA)
+  list(APPEND VCPKG_MANIFEST_FEATURES "hana")
+endif()
 if(WITH_ORACLE)
   list(APPEND VCPKG_MANIFEST_FEATURES "oracle")
 endif()
@@ -34,6 +37,9 @@ if(WITH_PROJ_DATA)
 endif()
 if(WITH_TRACY)
   list(APPEND VCPKG_MANIFEST_FEATURES "tracy")
+endif()
+if(WITH_QTWEBENGINE OR WITH_PDF4QT)
+  list(APPEND VCPKG_MANIFEST_FEATURES "qtwebengine")
 endif()
 # We cannot detect the EMSCRIPTEN variable yet, as we didn't load the toolchain file at this point.
 # So we use the target triplet to determine if we are building for wasm.
@@ -86,7 +92,8 @@ if(NOT "${NUGET_TOKEN}" STREQUAL "" AND (CMAKE_HOST_WIN32 OR EXISTS "${_VCPKG_MO
   endif()
 
   file(TO_NATIVE_PATH "${_CONFIG_PATH}" _CONFIG_PATH_NATIVE)
-  set(ENV{VCPKG_BINARY_SOURCES} "$ENV{VCPKG_BINARY_SOURCES};nugetconfig,${_CONFIG_PATH_NATIVE},readwrite")
+  # qtbase/qtdeclarative nupkgs exceed vcpkg's default 100s push timeout on the GitHub Packages
+  set(ENV{VCPKG_BINARY_SOURCES} "$ENV{VCPKG_BINARY_SOURCES};nugettimeout,1800;nugetconfig,${_CONFIG_PATH_NATIVE},readwrite")
 endif()
 
 set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")

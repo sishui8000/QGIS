@@ -110,7 +110,7 @@ class CORE_EXPORT QgsMultiLineString : public QgsMultiCurve
     bool fromWkt( const QString &wkt ) override;
     QDomElement asGml2( QDomDocument &doc, int precision = 17, const QString &ns = "gml", QgsAbstractGeometry::AxisOrder axisOrder = QgsAbstractGeometry::AxisOrder::XY ) const override;
     QDomElement asGml3( QDomDocument &doc, int precision = 17, const QString &ns = "gml", QgsAbstractGeometry::AxisOrder axisOrder = QgsAbstractGeometry::AxisOrder::XY ) const override;
-    json asJsonObject( int precision = 17 ) const override SIP_SKIP;
+    json asJsonObject( int precision = 17, Qgis::GeoJsonProfile profile = Qgis::GeoJsonProfile::Legacy ) const override SIP_SKIP;
     bool addGeometry( QgsAbstractGeometry *g SIP_TRANSFER ) override;
     bool addGeometries( const QVector< QgsAbstractGeometry * > &geometries SIP_TRANSFER ) final;
     bool insertGeometry( QgsAbstractGeometry *g SIP_TRANSFER, int index ) override;
@@ -176,7 +176,7 @@ class CORE_EXPORT QgsMultiLineString : public QgsMultiCurve
      *
      * \since QGIS 3.36
      */
-    QgsMultiLineString *measuredLine( double start, double end ) const SIP_FACTORY;
+    std::unique_ptr<QgsMultiLineString> measuredLine( double start, double end ) const;
 
   protected:
 

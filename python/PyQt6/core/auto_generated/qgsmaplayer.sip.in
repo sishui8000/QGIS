@@ -411,7 +411,7 @@ GetCapabilities request.
 %End
 
 
-    QgsMapLayerServerProperties *serverProperties();
+    QgsMapLayerServerProperties *serverProperties() /DisallowNone/;
 %Docstring
 Returns QGIS Server Properties for the map layer
 
@@ -884,6 +884,26 @@ database.
          - msgError: a descriptive error message if any occurs
 
 .. versionadded:: 4.0
+%End
+
+    QgsSaveStyleResult saveStyleToDatabaseV3(
+      const QString &name, const QString &description, bool useAsDefault, const QString &uiFileContent, const Qgis::SaveStyleFormats formats, QgsMapLayer::StyleCategories categories = QgsMapLayer::AllStyleCategories
+    );
+%Docstring
+Saves selected representation of the layer's style to a table in the
+database.
+
+:param name: Style name
+:param description: A description of the style
+:param useAsDefault: Set to ``True`` if style should be used as the
+                     default style for the layer
+:param uiFileContent: 
+:param formats: Flag specifying which style formats to save.
+:param categories: the style categories to be saved.
+
+:return: Object containing information about export status and messages.
+
+.. versionadded:: 4.4
 %End
 
 
@@ -1594,12 +1614,12 @@ setting the data source can be retrieved by calling
 Returns the provider type (provider key) for this layer
 %End
 
-    QUndoStack *undoStack();
+    QUndoStack *undoStack() /DisallowNone/;
 %Docstring
 Returns pointer to layer's undo stack
 %End
 
-    QUndoStack *undoStackStyles();
+    QUndoStack *undoStackStyles() /DisallowNone/;
 %Docstring
 Returns pointer to layer's style undo stack
 %End
@@ -1653,7 +1673,7 @@ responsible for providing legend items.
 Can be ``None``.
 %End
 
-    QgsMapLayerStyleManager *styleManager() const;
+    QgsMapLayerStyleManager *styleManager() const /DisallowNone/;
 %Docstring
 Gets access to the layer's style manager. Style manager allows switching
 between multiple styles.
@@ -1887,8 +1907,11 @@ The storage format for the XML is qlr
 
     static QString generateId( const QString &layerName );
 %Docstring
-Generates an unique identifier for this layer, the generate ID is
-prefixed by ``layerName``
+Generates an unique identifier for the layer with the specified
+``layerName``.
+
+The generated ID is prefixed by the (possibly truncated) ``layerName``
+string.
 
 .. versionadded:: 3.8
 %End

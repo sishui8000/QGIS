@@ -309,15 +309,15 @@ bool QgsRuleBasedRenderer::Rule::isScaleOK( double scale ) const
   return true;
 }
 
-QgsRuleBasedRenderer::Rule *QgsRuleBasedRenderer::Rule::clone() const
+std::unique_ptr<QgsRuleBasedRenderer::Rule> QgsRuleBasedRenderer::Rule::clone() const
 {
   QgsSymbol *sym = mSymbol ? mSymbol->clone() : nullptr;
-  Rule *newrule = new Rule( sym, mMaximumScale, mMinimumScale, mFilterExp, mLabel, mDescription );
+  auto newrule = std::make_unique<Rule>( sym, mMaximumScale, mMinimumScale, mFilterExp, mLabel, mDescription );
   newrule->setActive( mIsActive );
   // clone children
   const auto constMChildren = mChildren;
   for ( Rule *rule : constMChildren )
-    newrule->appendChild( rule->clone() );
+    newrule->appendChild( rule->clone().release() );
   return newrule;
 }
 
@@ -764,9 +764,26 @@ QgsRuleBasedRenderer::RuleList QgsRuleBasedRenderer::Rule::rulesForFeature( cons
   if ( onlyActive )
     listChildren = mActiveChildren;
 
+  bool matchedNonElseRule = false;
   for ( Rule *rule : std::as_const( listChildren ) )
   {
-    lst += rule->rulesForFeature( feature, context, onlyActive );
+    if ( rule->isElse() )
+      continue;
+
+    const RuleList childRules = rule->rulesForFeature( feature, context, onlyActive );
+    matchedNonElseRule |= !childRules.isEmpty();
+    lst += childRules;
+  }
+
+  if ( !matchedNonElseRule )
+  {
+    for ( Rule *rule : std::as_const( mElseRules ) )
+    {
+      if ( onlyActive && !mActiveChildren.contains( rule ) )
+        continue;
+
+      lst += rule->rulesForFeature( feature, context, onlyActive );
+    }
   }
   return lst;
 }
@@ -786,7 +803,7 @@ void QgsRuleBasedRenderer::Rule::stopRender( QgsRenderContext &context )
   mSymbolNormZLevels.clear();
 }
 
-QgsRuleBasedRenderer::Rule *QgsRuleBasedRenderer::Rule::create( QDomElement &ruleElem, QgsSymbolMap &symbolMap, bool reuseId, const QgsReadWriteContext &context )
+std::unique_ptr<QgsRuleBasedRenderer::Rule> QgsRuleBasedRenderer::Rule::create( QDomElement &ruleElem, QgsSymbolMap &symbolMap, bool reuseId, const QgsReadWriteContext &context )
 {
   QString symbolIdx = ruleElem.attribute( u"symbol"_s );
   QgsSymbol *symbol = nullptr;
@@ -814,7 +831,7 @@ QgsRuleBasedRenderer::Rule *QgsRuleBasedRenderer::Rule::create( QDomElement &rul
     ruleKey = ruleElem.attribute( u"key"_s );
   else
     ruleKey = QUuid::createUuid().toString();
-  Rule *rule = new Rule( symbol, scaleMinDenom, scaleMaxDenom, filterExp, label, description );
+  auto rule = std::make_unique<Rule>( symbol, scaleMinDenom, scaleMaxDenom, filterExp, label, description );
 
   if ( !ruleKey.isEmpty() )
     rule->mRuleKey = ruleKey;
@@ -824,10 +841,10 @@ QgsRuleBasedRenderer::Rule *QgsRuleBasedRenderer::Rule::create( QDomElement &rul
   QDomElement childRuleElem = ruleElem.firstChildElement( u"rule"_s );
   while ( !childRuleElem.isNull() )
   {
-    Rule *childRule = create( childRuleElem, symbolMap, true, context );
+    std::unique_ptr<Rule> childRule = create( childRuleElem, symbolMap, true, context );
     if ( childRule )
     {
-      rule->appendChild( childRule );
+      rule->appendChild( childRule.release() );
     }
     else
     {
@@ -850,7 +867,7 @@ QgsRuleBasedRenderer::RuleList QgsRuleBasedRenderer::Rule::descendants() const
   return l;
 }
 
-QgsRuleBasedRenderer::Rule *QgsRuleBasedRenderer::Rule::createFromSld( QDomElement &ruleElem, Qgis::GeometryType geomType )
+std::unique_ptr<QgsRuleBasedRenderer::Rule> QgsRuleBasedRenderer::Rule::createFromSld( QDomElement &ruleElem, Qgis::GeometryType geomType )
 {
   if ( ruleElem.localName() != "Rule"_L1 )
   {
@@ -900,7 +917,7 @@ QgsRuleBasedRenderer::Rule *QgsRuleBasedRenderer::Rule::createFromSld( QDomEleme
     }
     else if ( childElem.localName() == "Filter"_L1 )
     {
-      QgsExpression *filter = QgsOgcUtils::expressionFromOgcFilter( childElem );
+      std::unique_ptr<QgsExpression> filter = QgsOgcUtils::expressionFromOgcFilter( childElem );
       if ( filter )
       {
         if ( filter->hasParserError() )
@@ -911,7 +928,6 @@ QgsRuleBasedRenderer::Rule *QgsRuleBasedRenderer::Rule::createFromSld( QDomEleme
         {
           filterExp = filter->expression();
         }
-        delete filter;
       }
     }
     else if ( childElem.localName() == "ElseFilter"_L1 )
@@ -966,7 +982,7 @@ QgsRuleBasedRenderer::Rule *QgsRuleBasedRenderer::Rule::createFromSld( QDomEleme
   }
 
   // and then create and return the new rule
-  return new Rule( symbol, scaleMinDenom, scaleMaxDenom, filterExp, label, description );
+  return std::make_unique<Rule>( symbol, scaleMinDenom, scaleMaxDenom, filterExp, label, description );
 }
 
 
@@ -980,14 +996,12 @@ QgsRuleBasedRenderer::QgsRuleBasedRenderer( QgsRuleBasedRenderer::Rule *root )
 QgsRuleBasedRenderer::QgsRuleBasedRenderer( QgsSymbol *defaultSymbol )
   : QgsFeatureRenderer( u"RuleRenderer"_s )
 {
-  mRootRule = new Rule( nullptr ); // root has no symbol, no filter etc - just a container
+  mRootRule = std::make_unique<Rule>( nullptr ); // root has no symbol, no filter etc - just a container
   mRootRule->appendChild( new Rule( defaultSymbol ) );
 }
 
 QgsRuleBasedRenderer::~QgsRuleBasedRenderer()
-{
-  delete mRootRule;
-}
+{}
 
 
 QgsSymbol *QgsRuleBasedRenderer::symbolForFeature( const QgsFeature &, QgsRenderContext & ) const
@@ -1016,7 +1030,7 @@ Qgis::FeatureRendererFlags QgsRuleBasedRenderer::flags() const
       exploreRule( child );
     }
   };
-  exploreRule( mRootRule );
+  exploreRule( mRootRule.get() );
 
   return res;
 }
@@ -1129,7 +1143,7 @@ bool QgsRuleBasedRenderer::filterNeedsGeometry() const
 
 QgsRuleBasedRenderer *QgsRuleBasedRenderer::clone() const
 {
-  QgsRuleBasedRenderer::Rule *clonedRoot = mRootRule->clone();
+  std::unique_ptr<QgsRuleBasedRenderer::Rule> clonedRoot = mRootRule->clone();
 
   // normally with clone() the individual rules get new keys (UUID), but here we want to keep
   // the tree of rules intact, so that other components that may use the rule keys work nicely (e.g. map themes)
@@ -1140,7 +1154,7 @@ QgsRuleBasedRenderer *QgsRuleBasedRenderer::clone() const
   for ( int i = 0; i < origDescendants.count(); ++i )
     clonedDescendants[i]->setRuleKey( origDescendants[i]->ruleKey() );
 
-  QgsRuleBasedRenderer *r = new QgsRuleBasedRenderer( clonedRoot );
+  QgsRuleBasedRenderer *r = new QgsRuleBasedRenderer( clonedRoot.release() );
 
   copyRendererData( r );
   return r;
@@ -1279,13 +1293,20 @@ void QgsRuleBasedRenderer::setLegendSymbolItem( const QString &key, QgsSymbol *s
     delete symbol;
 }
 
+void QgsRuleBasedRenderer::setLegendSymbolItemLabel( const QString &key, const QString &label )
+{
+  Rule *rule = mRootRule->findRuleByKey( key );
+  if ( rule )
+    rule->setLabel( label );
+}
+
 QgsLegendSymbolList QgsRuleBasedRenderer::legendSymbolItems() const
 {
   return mRootRule->legendSymbolItems();
 }
 
 
-QgsFeatureRenderer *QgsRuleBasedRenderer::create( QDomElement &element, const QgsReadWriteContext &context )
+std::unique_ptr<QgsFeatureRenderer> QgsRuleBasedRenderer::create( QDomElement &element, const QgsReadWriteContext &context )
 {
   // load symbols
   QDomElement symbolsElem = element.firstChildElement( u"symbols"_s );
@@ -1296,11 +1317,11 @@ QgsFeatureRenderer *QgsRuleBasedRenderer::create( QDomElement &element, const Qg
 
   QDomElement rulesElem = element.firstChildElement( u"rules"_s );
 
-  Rule *root = Rule::create( rulesElem, symbolMap, true, context );
+  std::unique_ptr<Rule> root = Rule::create( rulesElem, symbolMap, true, context );
   if ( !root )
     return nullptr;
 
-  QgsRuleBasedRenderer *r = new QgsRuleBasedRenderer( root );
+  auto r = std::make_unique<QgsRuleBasedRenderer>( root.release() );
 
   // delete symbols if there are any more
   QgsSymbolLayerUtils::clearSymbolMap( symbolMap );
@@ -1308,7 +1329,7 @@ QgsFeatureRenderer *QgsRuleBasedRenderer::create( QDomElement &element, const Qg
   return r;
 }
 
-QgsFeatureRenderer *QgsRuleBasedRenderer::createFromSld( QDomElement &element, Qgis::GeometryType geomType )
+std::unique_ptr<QgsFeatureRenderer> QgsRuleBasedRenderer::createFromSld( QDomElement &element, Qgis::GeometryType geomType )
 {
   // retrieve child rules
   Rule *root = nullptr;
@@ -1316,14 +1337,14 @@ QgsFeatureRenderer *QgsRuleBasedRenderer::createFromSld( QDomElement &element, Q
   QDomElement ruleElem = element.firstChildElement( u"Rule"_s );
   while ( !ruleElem.isNull() )
   {
-    Rule *child = Rule::createFromSld( ruleElem, geomType );
+    std::unique_ptr<Rule> child = Rule::createFromSld( ruleElem, geomType );
     if ( child )
     {
       // create the root rule if not done before
       if ( !root )
         root = new Rule( nullptr );
 
-      root->appendChild( child );
+      root->appendChild( child.release() );
     }
 
     ruleElem = ruleElem.nextSiblingElement( u"Rule"_s );
@@ -1336,7 +1357,7 @@ QgsFeatureRenderer *QgsRuleBasedRenderer::createFromSld( QDomElement &element, Q
   }
 
   // create and return the new renderer
-  return new QgsRuleBasedRenderer( root );
+  return std::make_unique<QgsRuleBasedRenderer>( root );
 }
 
 #include "qgscategorizedsymbolrenderer.h"
@@ -1457,7 +1478,7 @@ bool QgsRuleBasedRenderer::accept( QgsStyleEntityVisitorInterface *visitor ) con
   return mRootRule->accept( visitor );
 }
 
-QgsRuleBasedRenderer *QgsRuleBasedRenderer::convertFromRenderer( const QgsFeatureRenderer *renderer, QgsVectorLayer *layer )
+std::unique_ptr<QgsRuleBasedRenderer> QgsRuleBasedRenderer::convertFromRenderer( const QgsFeatureRenderer *renderer, QgsVectorLayer *layer )
 {
   std::unique_ptr< QgsRuleBasedRenderer > r;
   if ( renderer->type() == "RuleRenderer"_L1 )
@@ -1516,7 +1537,7 @@ QgsRuleBasedRenderer *QgsRuleBasedRenderer::convertFromRenderer( const QgsFeatur
         for ( const QVariant &v : list )
         {
           //If the value is a number, we can use it directly, otherwise we need to quote it in the rule
-          if ( QVariant( v ).convert( QMetaType::Type::Double ) )
+          if ( QVariant( v ).convert( QMetaType::fromType<double>() ) )
           {
             values << v.toString();
           }
@@ -1538,7 +1559,7 @@ QgsRuleBasedRenderer *QgsRuleBasedRenderer::convertFromRenderer( const QgsFeatur
       else
       {
         //If the value is a number, we can use it directly, otherwise we need to quote it in the rule
-        if ( category.value().convert( QMetaType::Type::Double ) )
+        if ( category.value().convert( QMetaType::fromType<double>() ) )
         {
           value = category.value().toString();
         }
@@ -1650,12 +1671,12 @@ QgsRuleBasedRenderer *QgsRuleBasedRenderer::convertFromRenderer( const QgsFeatur
   else if ( renderer->type() == "invertedPolygonRenderer"_L1 )
   {
     if ( const QgsInvertedPolygonRenderer *invertedPolygonRenderer = dynamic_cast<const QgsInvertedPolygonRenderer *>( renderer ) )
-      r.reset( convertFromRenderer( invertedPolygonRenderer->embeddedRenderer() ) );
+      r = convertFromRenderer( invertedPolygonRenderer->embeddedRenderer() );
   }
   else if ( renderer->type() == "mergedFeatureRenderer"_L1 )
   {
     if ( const QgsMergedFeatureRenderer *mergedRenderer = dynamic_cast<const QgsMergedFeatureRenderer *>( renderer ) )
-      r.reset( convertFromRenderer( mergedRenderer->embeddedRenderer() ) );
+      r = convertFromRenderer( mergedRenderer->embeddedRenderer() );
   }
   else if ( renderer->type() == "embeddedSymbol"_L1 && layer )
   {
@@ -1694,7 +1715,7 @@ QgsRuleBasedRenderer *QgsRuleBasedRenderer::convertFromRenderer( const QgsFeatur
     renderer->copyRendererData( r.get() );
   }
 
-  return r.release();
+  return r;
 }
 
 void QgsRuleBasedRenderer::convertToDataDefinedSymbology( QgsSymbol *symbol, const QString &sizeScaleField, const QString &rotationField )

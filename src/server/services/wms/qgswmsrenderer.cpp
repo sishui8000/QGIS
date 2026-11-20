@@ -58,6 +58,7 @@
 #include "qgsmeshlayer.h"
 #include "qgsmeshlayertemporalproperties.h"
 #include "qgsmessagelog.h"
+#include "qgspainting.h"
 #include "qgspallabeling.h"
 #include "qgsproject.h"
 #include "qgsrasteridentifyresult.h"
@@ -1232,8 +1233,12 @@ namespace QgsWms
   std::unique_ptr<QgsMapRendererTask> QgsRenderer::getPdf( const QString &tmpFileName )
   {
     QgsMapSettings ms;
+
+    QList<QgsMapLayer *> layers = mContext.layersToRender();
+    configureLayers( layers, &ms );
+
+    ms.setLayers( layers );
     ms.setExtent( mWmsParameters.bboxAsRectangle() );
-    ms.setLayers( mContext.layersToRender() );
     ms.setDestinationCrs( QgsCoordinateReferenceSystem::fromOgcWmsCrs( mWmsParameters.crs() ) );
     ms.setOutputSize( QSize( mWmsParameters.widthAsInt(), mWmsParameters.heightAsInt() ) );
     ms.setDpiTarget( mWmsParameters.dpiAsDouble() );
@@ -2546,9 +2551,9 @@ namespace QgsWms
         QDomElement maptipElem = infoDocument.createElement( u"Attribute"_s );
         maptipElem.setAttribute( u"name"_s, u"maptip"_s );
         QgsExpressionContext context { renderContext.expressionContext() };
-        QgsExpressionContextScope *scope = QgsExpressionContextUtils::layerScope( layer );
+        std::unique_ptr<QgsExpressionContextScope> scope = QgsExpressionContextUtils::layerScope( layer );
         scope->addVariable( QgsExpressionContextScope::StaticVariable( u"layer_cursor_point"_s, QVariant::fromValue( QgsGeometry::fromPointXY( QgsPointXY( infoPoint->x(), infoPoint->y() ) ) ) ) );
-        context.appendScope( scope );
+        context.appendScope( std::move( scope ) );
         maptipElem.setAttribute( u"value"_s, QgsExpression::replaceExpressionText( mapTip, &context ) );
         layerElement.appendChild( maptipElem );
       }
@@ -3160,7 +3165,13 @@ namespace QgsWms
         exporter.setAttributeDisplayName( true );
         exporter.setAttributes( attributes );
         exporter.setIncludeGeometry( withGeometry );
+        // Always add CRS information so that the export knows if it needs to transform geometries
+        // to CRS84 in case the requested profile needs it, the feature geometries are already
+        // in the CRS of the request, so no transformation is needed
         exporter.setTransformGeometries( false );
+        exporter.setDestinationCrs( destCRS );
+        // This is the CRS of the features that the exporter receives
+        exporter.setSourceCrs( destCRS );
 
         QgsJsonUtils::addCrsInfo( jsonCollection, destCRS );
 
@@ -3412,13 +3423,22 @@ namespace QgsWms
       }
 
       QDomElement fieldElem = doc.createElement( "qgs:" + attributeName.replace( ' ', '_' ) );
-      QString fieldTextString = featureAttributes.at( i ).toString();
-      if ( layer )
+
+      // For GML: skip formatter and return null value if the attribute value is null
+      if ( mWmsParameters.infoFormat() == QgsWmsParameters::Format::GML && QgsVariantUtils::isNull( featureAttributes.at( i ) ) )
       {
-        fieldTextString = QgsExpression::replaceExpressionText( replaceValueMapAndRelation( layer, i, fieldTextString ), &expressionContext );
+        fieldElem.setAttribute( "xsi:nil"_L1, "true"_L1 );
       }
-      QDomText fieldText = doc.createTextNode( fieldTextString );
-      fieldElem.appendChild( fieldText );
+      else
+      {
+        QString fieldTextString = featureAttributes.at( i ).toString();
+        if ( layer )
+        {
+          fieldTextString = QgsExpression::replaceExpressionText( replaceValueMapAndRelation( layer, i, fieldTextString ), &expressionContext );
+        }
+        QDomText fieldText = doc.createTextNode( fieldTextString );
+        fieldElem.appendChild( fieldText );
+      }
       typeNameElement.appendChild( fieldElem );
     }
 
@@ -3524,7 +3544,7 @@ namespace QgsWms
       // create renderer from sld document
       std::unique_ptr<QgsFeatureRenderer> renderer;
       QDomElement el = sldDoc.documentElement();
-      renderer.reset( QgsFeatureRenderer::loadSld( el, param.mGeom.type(), errorMsg ) );
+      renderer = QgsFeatureRenderer::loadSld( el, param.mGeom.type(), errorMsg );
       if ( !renderer )
       {
         QgsMessageLog::logMessage( errorMsg, "Server", Qgis::MessageLevel::Info );
@@ -3711,7 +3731,7 @@ namespace QgsWms
     mContext.accessControl()->resolveFilterFeatures( mapSettings.layers() );
     filters.addProvider( mContext.accessControl() );
 #endif
-    QgsMapRendererJobProxy renderJob( mContext.settings().parallelRendering(), mContext.settings().maxThreads(), &filters );
+    QgsMapRendererJobProxy renderJob( mContext.settings().parallelRendering(), mContext.settings().maxThreads(), &filters, mContext.perLayerTemporalRange() );
 
     renderJob.render( mapSettings, image, mContext.socketFeedback() );
     painter = renderJob.takePainter();
@@ -3892,7 +3912,7 @@ namespace QgsWms
     for ( const QgsMapLayerServerProperties::WmsDimensionInfo &dim : wmsDims )
     {
       // Skip temporal properties for this layer, give precedence to the dimensions implementation
-      if ( mIsTemporal && dim.name.toUpper() == "TIME"_L1 && layer->temporalProperties()->isActive() )
+      if ( mIsTemporal && dim.name.toUpper() == QgsServerWmsDimensionProperties::TIME_DIMENSION_NAME && layer->temporalProperties()->isActive() )
       {
         layer->temporalProperties()->setIsActive( false );
       }
@@ -3917,13 +3937,13 @@ namespace QgsWms
       {
         // Default value based on type configured by user
         QVariant defValue;
-        if ( dim.defaultDisplayType == QgsMapLayerServerProperties::WmsDimensionInfo::AllValues )
+        if ( dim.defaultDisplayType == Qgis::WmsDimensionDefaultDisplay::AllValues )
         {
           continue; // no filter by default for this dimension
         }
-        else if ( dim.defaultDisplayType == QgsMapLayerServerProperties::WmsDimensionInfo::ReferenceValue )
+        else if ( dim.defaultDisplayType == Qgis::WmsDimensionDefaultDisplay::ReferenceValue )
         {
-          defValue = dim.referenceValue;
+          defValue = dim.referenceValue();
         }
         else
         {
@@ -3936,11 +3956,11 @@ namespace QgsWms
           // sort unique values
           QList<QVariant> values = qgis::setToList( uniqueValues );
           std::sort( values.begin(), values.end() );
-          if ( dim.defaultDisplayType == QgsMapLayerServerProperties::WmsDimensionInfo::MinValue )
+          if ( dim.defaultDisplayType == Qgis::WmsDimensionDefaultDisplay::MinValue )
           {
             defValue = values.first();
           }
-          else if ( dim.defaultDisplayType == QgsMapLayerServerProperties::WmsDimensionInfo::MaxValue )
+          else if ( dim.defaultDisplayType == Qgis::WmsDimensionDefaultDisplay::MaxValue )
           {
             defValue = values.last();
           }
@@ -4172,10 +4192,9 @@ namespace QgsWms
         offsetY = mapSettings.outputSize().height() * relativePos.y();
       }
 
-      painter->save();
+      QgsScopedQPainterState painterState( painter );
       painter->translate( offsetX, offsetY );
       annotation->render( renderContext );
-      painter->restore();
     }
   }
 

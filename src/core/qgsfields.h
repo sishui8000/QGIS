@@ -16,7 +16,6 @@
 #ifndef QGSFIELDS_H
 #define QGSFIELDS_H
 
-
 #include "qgis.h"
 #include "qgis_core.h"
 #include "qgis_sip.h"
@@ -359,7 +358,7 @@ class CORE_EXPORT QgsFields
 #ifndef SIP_RUN
 
     /**
-     * Returns the field's origin index (its meaning is specific to each type of origin).
+     * Returns the field's origin index (its meaning is specific to each type of origin) or -1 if no field exists at the specified index.
      *
      * - Qgis::FieldOrigin::Provider: The field's originIndex is the index in provider's fields.
      * - Qgis::FieldOrigin::Join: The field's originIndex / 1000 = index of the join, originIndex % 1000 = index within the join
@@ -445,7 +444,7 @@ class CORE_EXPORT QgsFields
     QList<QgsField> toList() const SIP_HOLDGIL;
 
     bool operator==( const QgsFields &other ) const SIP_HOLDGIL;
-    bool operator!=( const QgsFields &other ) const  SIP_HOLDGIL { return !( *this == other ); }
+    bool operator!=( const QgsFields &other ) const SIP_HOLDGIL { return !( *this == other ); }
 
 #ifndef SIP_RUN
 

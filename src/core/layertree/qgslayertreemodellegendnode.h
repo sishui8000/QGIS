@@ -183,6 +183,15 @@ class CORE_EXPORT QgsLayerTreeModelLegendNode : public QObject
     */
     virtual void invalidateMapBasedData() {}
 
+    /**
+     * Invalidates cached display data for the node.
+     *
+     * The default implementation does nothing.
+     *
+     * \since QGIS 4.2
+     */
+    virtual void invalidateDisplayData() {}
+
     struct ItemContext
     {
         Q_NOWARN_DEPRECATED_PUSH //because of deprecated members
@@ -373,7 +382,7 @@ class CORE_EXPORT QgsLayerTreeModelLegendNode : public QObject
     explicit QgsLayerTreeModelLegendNode( QgsLayerTreeLayer *nodeL, QObject *parent SIP_TRANSFERTHIS = nullptr );
 
     //! Returns a temporary context or NULLPTR if legendMapViewData are not valid
-    QgsRenderContext *createTemporaryRenderContext() const SIP_FACTORY;
+    std::unique_ptr<QgsRenderContext> createTemporaryRenderContext() const;
 
   protected:
     QgsLayerTreeLayer *mLayerNode = nullptr;
@@ -426,7 +435,7 @@ class CORE_EXPORT QgsSymbolLegendNode : public QgsLayerTreeModelLegendNode
     Qt::ItemFlags flags() const override;
     QVariant data( int role ) const override;
     bool setData( const QVariant &value, int role ) override;
-
+    void invalidateDisplayData() override;
     QSizeF drawSymbol( const QgsLegendSettings &settings, ItemContext *ctx, double itemHeight ) const override;
 
     QJsonObject exportSymbolToJson( const QgsLegendSettings &settings, const QgsRenderContext &context ) const override;
@@ -563,7 +572,7 @@ class CORE_EXPORT QgsSymbolLegendNode : public QgsLayerTreeModelLegendNode
      *
      * \since QGIS 3.36
      */
-    QgsExpressionContextScope *createSymbolScope() const SIP_FACTORY;
+    std::unique_ptr<QgsExpressionContextScope> createSymbolScope() const;
 
 #ifdef SIP_RUN
     // clang-format off
@@ -833,7 +842,7 @@ class CORE_EXPORT QgsDataDefinedSizeLegendNode : public QgsLayerTreeModelLegendN
     ~QgsDataDefinedSizeLegendNode() override;
 
     QVariant data( int role ) const override;
-
+    void invalidateDisplayData() override;
     ItemMetrics draw( const QgsLegendSettings &settings, ItemContext &ctx ) override;
 
 #ifdef SIP_RUN

@@ -110,7 +110,7 @@ QgsElevationProfileLayersDialog::QgsElevationProfileLayersDialog( QWidget *paren
   mFilterLineEdit->setShowClearButton( true );
   mFilterLineEdit->setShowSearchIcon( true );
 
-  mModel = new QgsMapLayerProxyModel( listMapLayers );
+  mModel = new QgsMapLayerProxyModel( QgsProject::instance(), listMapLayers );
   listMapLayers->setModel( mModel );
   const QModelIndex firstLayer = mModel->index( 0, 0 );
   listMapLayers->selectionModel()->select( firstLayer, QItemSelectionModel::Select );
@@ -177,7 +177,7 @@ QgsElevationProfileWidget::QgsElevationProfileWidget( QgsElevationProfile *profi
   const QgsSettings setting;
 
   QToolBar *toolBar = new QToolBar( this );
-  toolBar->setIconSize( QgisApp::instance()->iconSize( true ) );
+  toolBar->setIconSize( QgsGui::iconSize( Qgis::UserInterfaceIconType::DockedToolbar ) );
 
   mCanvas = new QgsElevationProfileCanvas( this );
   mCanvas->setProject( QgsProject::instance() );
@@ -575,12 +575,22 @@ QgsElevationProfileWidget::QgsElevationProfileWidget( QgsElevationProfile *profi
   // manipulate the PROJECT's layer tree ONLY, and consequently do not trigger the QgsProject::legendLayersAdded signal which the
   // bridge relies on. So we also need to explicitly listen out for QgsProject::layersAddedWithoutLegend here, to ensure that
   // layers added via QLR or copy/paste are also added to the elevation profile's layer tree
-  connect( QgsProject::instance(), &QgsProject::layersAddedWithoutLegend, mLayerTreeView, [this] {
-    if ( mProfile && !mProfile->useProjectLayerTree() )
-    {
-      mLayerTreeView->populateMissingLayers( QgsProject::instance() );
-    }
-  } );
+  // Hoewver (!), drag and dropped layers fire both QgsProject::layersAddedWithoutLegend first, and then QgsProject::legendLayersAdded once the
+  // layers are sorted for the legend.
+  // We want to handle the QgsProject::layersAddedWithoutLegend signal last, so that we can skip adding layers that are added
+  // by the layer bridge using QgsProject::legendLayersAdded, that's why we use a queued connection.
+  connect(
+    QgsProject::instance(),
+    &QgsProject::layersAddedWithoutLegend,
+    mLayerTreeView,
+    [this] {
+      if ( mProfile && !mProfile->useProjectLayerTree() )
+      {
+        mLayerTreeView->populateMissingLayers( QgsProject::instance() );
+      }
+    },
+    Qt::QueuedConnection
+  );
 
   connect( QgsProject::instance()->elevationProperties(), &QgsProjectElevationProperties::changed, this, &QgsElevationProfileWidget::onProjectElevationPropertiesChanged );
   connect( QgsProject::instance(), &QgsProject::crs3DChanged, this, &QgsElevationProfileWidget::onProjectElevationPropertiesChanged );
@@ -717,13 +727,11 @@ void QgsElevationProfileWidget::setMainCanvas( QgsMapCanvas *canvas )
     if ( mMapPointRubberBand )
       mMapPointRubberBand->hide();
   } );
-  connect( mCaptureCurveMapTool.get(), &QgsMapToolProfileCurve::captureCanceled, this, [this] {
+  connect( mCaptureCurveMapTool.get(), &QgsMapToolProfileCurve::captureFinished, this, [this] {
     if ( mRubberBand )
       mRubberBand->show();
     if ( mToleranceRubberBand )
       mToleranceRubberBand->show();
-    if ( mMapPointRubberBand )
-      mMapPointRubberBand->show();
   } );
 
   mCaptureCurveFromFeatureMapTool = std::make_unique<QgsMapToolProfileCurveFromFeature>( canvas );
@@ -732,7 +740,7 @@ void QgsElevationProfileWidget::setMainCanvas( QgsMapCanvas *canvas )
 
   mMapPointRubberBand = make_qobject_unique<QgsRubberBand>( canvas, Qgis::GeometryType::Point );
   mMapPointRubberBand->setZValue( 1000 );
-  mMapPointRubberBand->setIcon( QgsRubberBand::ICON_FULL_DIAMOND );
+  mMapPointRubberBand->setIcon( Qgis::RubberBandIconType::DiamondFilled );
   mMapPointRubberBand->setWidth( QgsGuiUtils::scaleIconSize( 8 ) );
   mMapPointRubberBand->setIconSize( QgsGuiUtils::scaleIconSize( 4 ) );
   mMapPointRubberBand->setSecondaryStrokeColor( QColor( 255, 255, 255, 100 ) );
@@ -784,6 +792,11 @@ void QgsElevationProfileWidget::setupLayerTreeView( bool resetTree )
     if ( resetTree )
     {
       copyProjectTree( mLayerTree );
+    }
+    else
+    {
+      mLayerTreeView->cleanupDeletedLayers( QgsProject::instance() );
+      mLayerTreeView->populateMissingLayers( QgsProject::instance(), true );
     }
 
     // Initially populates the tree view using sources from the source registry
@@ -886,7 +899,7 @@ void QgsElevationProfileWidget::updateCanvasSources()
     return;
 
   QList<QgsMapLayer *> layers;
-  QList<QgsAbstractProfileSource *> sources;
+  QList< std::variant< QgsMapLayer *, QgsAbstractProfileSource * > > sources;
   const QList<QgsLayerTreeNode *> layerAndCustomNodeOrder = mLayerTree->layerAndCustomNodeOrder();
 
   for ( QgsLayerTreeNode *node : layerAndCustomNodeOrder )
@@ -901,15 +914,15 @@ void QgsElevationProfileWidget::updateCanvasSources()
       if ( mLayerTree->findLayer( layer )->isVisible() )
       {
         layers << layer;
-        sources << layer->profileSource();
+        sources << layer;
       }
     }
     else if ( QgsLayerTree::isCustomNode( node ) && node->customProperty( u"source"_s ) == QgsElevationProfileLayerTreeView::CUSTOM_NODE_ELEVATION_PROFILE_SOURCE )
     {
       QgsLayerTreeCustomNode *customNode = QgsLayerTree::toCustomNode( node );
-      if ( mLayerTree->findCustomNode( customNode->nodeId() )->isVisible() )
+      if ( mLayerTree->findCustomNode( customNode->id() )->isVisible() )
       {
-        if ( QgsAbstractProfileSource *customSource = QgsApplication::profileSourceRegistry()->findSourceById( customNode->nodeId() ) )
+        if ( QgsAbstractProfileSource *customSource = QgsApplication::profileSourceRegistry()->findSourceById( customNode->id() ) )
         {
           sources << customSource;
         }
@@ -1465,6 +1478,10 @@ void QgsElevationProfileWidget::createOrUpdateRubberBands()
     if ( mToleranceRubberBand )
       mToleranceRubberBand->hide();
   }
+
+  // hide the map point band, it will be shown again on hover
+  if ( mMapPointRubberBand )
+    mMapPointRubberBand->hide();
 }
 
 void QgsElevationProfileWidget::onProjectElevationPropertiesChanged()
@@ -1563,7 +1580,7 @@ void QgsAppElevationProfileLayerTreeView::contextMenuEvent( QContextMenuEvent *e
     setCurrentIndex( QModelIndex() );
 
   const bool allowModifications = qobject_cast<QgsElevationProfileLayerTreeModel * >( layerTreeModel() )->allowModifications();
-  QMenu *menu = new QMenu();
+  QMenu *menu = new QMenu( this );
   if ( QgsMapLayer *layer = layerForIndex( index ) )
   {
     QAction *propertiesAction = new QAction( tr( "Properties…" ), menu );
@@ -1584,7 +1601,7 @@ void QgsAppElevationProfileLayerTreeView::contextMenuEvent( QContextMenuEvent *e
 
   if ( !menu->isEmpty() )
   {
-    menu->exec( mapToGlobal( event->pos() ) );
+    menu->exec( event->globalPos() );
   }
   delete menu;
 }

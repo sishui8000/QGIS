@@ -1124,31 +1124,6 @@ void QgsOgrProvider::loadFields()
 
         switch ( OGR_FldDomain_GetDomainType( domain ) )
         {
-          case OFDT_CODED:
-          {
-            QVariantList valueConfig;
-            const OGRCodedValue *codedValue = OGR_CodedFldDomain_GetEnumeration( domain );
-            while ( codedValue && codedValue->pszCode )
-            {
-              const QString code( codedValue->pszCode );
-              // if pszValue is null then it indicates we are working with a set of acceptable values which aren't
-              // coded. In this case we copy the code as the value so that QGIS exposes the domain as a choice of
-              // the valid code values.
-              const QString value( codedValue->pszValue ? codedValue->pszValue : codedValue->pszCode );
-
-              QVariantMap config;
-              config[value] = code;
-              valueConfig.append( config );
-
-              codedValue++;
-            }
-
-            QVariantMap editorConfig;
-            editorConfig.insert( u"map"_s, valueConfig );
-            newField.setEditorWidgetSetup( QgsEditorWidgetSetup( u"ValueMap"_s, editorConfig ) );
-            break;
-          }
-
           case OFDT_RANGE:
             if ( newField.isNumeric() )
             {
@@ -1189,6 +1164,9 @@ void QgsOgrProvider::loadFields()
             // config doesn't support this yet!
             break;
 
+          case OFDT_CODED:
+            // coded field domains will automatically use Enumeration widget since ::codedValues() returns the domain values
+            break;
           case OFDT_GLOB:
             // not supported by QGIS yet
             break;
@@ -1210,16 +1188,18 @@ void QgsOgrProvider::loadMetadata()
 
   if ( mOgrOrigLayer )
   {
-    QRecursiveMutex *mutex = nullptr;
-    OGRLayerH layer = mOgrOrigLayer->getHandleAndMutex( mutex );
-    QMutexLocker locker( mutex );
+    {
+      QRecursiveMutex *mutex = nullptr;
+      OGRLayerH layer = mOgrOrigLayer->getHandleAndMutex( mutex );
+      QMutexLocker locker( mutex );
 
-    const QString identifier = GDALGetMetadataItem( layer, "IDENTIFIER", "" );
-    if ( !identifier.isEmpty() )
-      mLayerMetadata.setTitle( identifier ); // see geopackage specs -- "'identifier' is analogous to 'title'"
-    const QString abstract = GDALGetMetadataItem( layer, "DESCRIPTION", "" );
-    if ( !abstract.isEmpty() )
-      mLayerMetadata.setAbstract( abstract );
+      const QString identifier = GDALGetMetadataItem( layer, "IDENTIFIER", "" );
+      if ( !identifier.isEmpty() )
+        mLayerMetadata.setTitle( identifier ); // see geopackage specs -- "'identifier' is analogous to 'title'"
+      const QString abstract = GDALGetMetadataItem( layer, "DESCRIPTION", "" );
+      if ( !abstract.isEmpty() )
+        mLayerMetadata.setAbstract( abstract );
+    }
 
     if ( mGDALDriverName == "GPKG"_L1 )
     {
@@ -1448,7 +1428,33 @@ QgsRectangle QgsOgrProvider::extent() const
     );
   }
 
-  return mExtentRect.toRectangle();
+  QgsRectangle res = mExtentRect.toRectangle();
+
+  // detect if the extent is the wrong portion of the globe for datasets which may cross the antimeridian
+  // we flag this for crs which we know can be used across the antimeridian only, where the extent returned
+  // by GDAL does not fall within the valid bounds of that crs.
+  // This logic is rather coarse, as it assumes datasets are well-formed and never used outside the
+  // area of use of their CRS. However, it's only triggered in a very small set of circumstances (not many
+  // geographic CRS cross the antimeridian), and the consequence of returning an invalid extent (ie one which
+  // contains NONE of the layer's features) is quite extreme...
+  // This logic is not perfect -- alternative approaches are welcome! :D
+  if ( mCrs.isGeographicCrossingAntimeridian() )
+  {
+    const QgsRectangle crsBounds = mCrs.bounds();
+    if ( !crsBounds.contains( res ) )
+    {
+      QgsDebugError( u"Extent of layer reported by GDAL looks wrong (longitude %1 to %2 falls outside of CRS area of use bounds of >=%3 and <=%4)"_s.arg( res.xMinimum() )
+                       .arg( res.xMaximum() )
+                       .arg( crsBounds.xMinimum() )
+                       .arg( crsBounds.xMaximum() ) );
+      // we have NO way of knowing the actual extent of this layer outside of iterating through all
+      // the features -- so just take a worse case scenario of the longitudinal bounds of the CRS'
+      // area of use
+      res.setXMinimum( crsBounds.xMinimum() );
+      res.setXMaximum( crsBounds.xMaximum() );
+    }
+  }
+  return res;
 }
 
 QgsBox3D QgsOgrProvider::extent3D() const
@@ -1675,6 +1681,51 @@ void QgsOgrProvider::updateExtents()
   invalidateCachedExtent( true );
 }
 
+QList<QPair<QString, QString>> QgsOgrProvider::codedValues( int index ) const
+{
+  if ( !mOgrLayer || index < 1 || index >= mAttributeFields.count() )
+    return {};
+
+  QList<QPair<QString, QString>> values;
+#if GDAL_VERSION_NUM >= GDAL_COMPUTE_VERSION( 3, 3, 0 )
+  // needed for field domain retrieval on GDAL 3.3+
+  QRecursiveMutex *datasetMutex = nullptr;
+  GDALDatasetH ds = mOgrLayer->getDatasetHandleAndMutex( datasetMutex );
+  QMutexLocker locker( datasetMutex );
+
+  QgsOgrFeatureDefn &fdef = mOgrLayer->GetLayerDefn();
+  OGRFieldDefnH fldDef = fdef.GetFieldDefn( index - 1 );
+
+  if ( const char *domainName = OGR_Fld_GetDomainName( fldDef ); OGRFieldDomainH domain = GDALDatasetGetFieldDomain( ds, domainName ) )
+  {
+    // dataset retains ownership of domain!
+    switch ( OGR_FldDomain_GetDomainType( domain ) )
+    {
+      case OFDT_CODED:
+      {
+        const OGRCodedValue *codedValue = OGR_CodedFldDomain_GetEnumeration( domain );
+        while ( codedValue && codedValue->pszCode )
+        {
+          // if pszValue is null then it indicates we are working with a set of acceptable values which aren't
+          // coded. In this case we copy the code as the value so that QGIS exposes the domain as a choice of
+          // the valid code values.
+          const QString value( codedValue->pszValue ? codedValue->pszValue : codedValue->pszCode );
+
+          values.append( qMakePair( codedValue->pszCode, value ) );
+          codedValue++;
+        }
+        break;
+      }
+
+      case OFDT_RANGE:
+      case OFDT_GLOB:
+        break;
+    }
+  }
+#endif
+  return values;
+}
+
 void QgsOgrProvider::invalidateCachedExtent( bool bForceRecomputeExtent )
 {
   mForceRecomputeExtent = bForceRecomputeExtent;
@@ -1776,7 +1827,7 @@ OGRGeometryH QgsOgrProvider::ConvertGeometryIfNecessary( OGRGeometryH hGeom )
 
 QString QgsOgrProvider::jsonStringValue( const QVariant &value ) const
 {
-  QString stringValue = QString::fromUtf8( QJsonDocument::fromVariant( value ).toJson().constData() );
+  QString stringValue = QString::fromUtf8( QJsonDocument::fromVariant( value ).toJson( QJsonDocument::JsonFormat::Compact ).constData() );
   if ( stringValue.isEmpty() )
   {
     //store as string, because it's no valid QJson value
@@ -2002,7 +2053,7 @@ bool QgsOgrProvider::addFeaturePrivate( QgsFeature &f, Flags flags, QgsFeatureId
           }
           else
           {
-            stringValue = attrVal.toString();
+            stringValue = jsonStringValue( attrVal );
           }
           QgsDebugMsgLevel( u"Writing string attribute %1 with %2, encoding %3"_s.arg( qgisAttributeId ).arg( attrVal.toString(), textEncoding()->name().data() ), 3 );
           OGR_F_SetFieldString( feature.get(), ogrAttributeId, textEncoding()->fromUnicode( stringValue ).constData() );
@@ -2135,7 +2186,7 @@ bool QgsOgrProvider::addFeaturePrivate( QgsFeature &f, Flags flags, QgsFeatureId
           QMetaType::Type ogrVariantSubType = QMetaType::Type::UnknownType;
           QgsOgrUtils::ogrFieldTypeToQVariantType( type, subType, ogrVariantType, ogrVariantSubType );
 
-          pushError( tr( "wrong data type for attribute %1 of feature %2: Got %3, expected %4" ).arg( ogrFieldName ).arg( f.id() ).arg( attrVal.typeName(), QVariant::typeToName( ogrVariantType ) ) );
+          pushError( tr( "wrong data type for attribute %1 of feature %2: Got %3, expected %4" ).arg( ogrFieldName ).arg( f.id() ).arg( attrVal.typeName(), QMetaType( ogrVariantType ).name() ) );
         }
         returnValue = false;
       }

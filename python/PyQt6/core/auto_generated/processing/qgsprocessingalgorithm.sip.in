@@ -11,6 +11,7 @@
 
 
 
+
 %ModuleHeaderCode
 #include <qgsprocessingmodelalgorithm.h>
 %End
@@ -169,6 +170,40 @@ purposes.
 The default is to return no flags.
 
 .. versionadded:: 3.40
+%End
+
+    virtual QList<QgsAcademicReference> academicReferences() const;
+%Docstring
+Returns the list of academic references describing the logic and
+processes used by the algorithm.
+
+.. versionadded:: 4.4
+%End
+
+    struct ExternalLink
+    {
+      QString description;
+      QString url;
+    };
+
+    virtual QList< QgsProcessingAlgorithm::ExternalLink > externalLinks() const;
+%Docstring
+Returns a list of external links describing the algorithm's behavior or
+source.
+
+.. versionadded:: 4.4
+%End
+
+    virtual QString implementationSourceUri() const;
+%Docstring
+Returns a URL for the source code location best reflecting the internal
+algorithm logic.
+
+Subclasses should return a URL pointing to the source code location best
+representing this internal logic, e.g. from the plugin's public code
+repository.
+
+.. versionadded:: 4.4
 %End
 
     virtual QIcon icon() const /HoldGIL/;
@@ -814,8 +849,8 @@ value.
 .. versionadded:: 3.8
 %End
 
-    QgsFeatureSink *parameterAsSink( const QVariantMap &parameters, const QString &name, QgsProcessingContext &context, QString &destinationIdentifier /Out/,
-                                     const QgsFields &fields, Qgis::WkbType geometryType = Qgis::WkbType::NoGeometry, const QgsCoordinateReferenceSystem &crs = QgsCoordinateReferenceSystem(), QgsFeatureSink::SinkFlags sinkFlags = QgsFeatureSink::SinkFlags(), const QVariantMap &createOptions = QVariantMap(), const QStringList &datasourceOptions = QStringList(), const QStringList &layerOptions = QStringList() ) const  /Factory/;
+    std::unique_ptr<QgsFeatureSink> parameterAsSink( const QVariantMap &parameters, const QString &name, QgsProcessingContext &context, QString &destinationIdentifier /Out/,
+                                     const QgsFields &fields, Qgis::WkbType geometryType = Qgis::WkbType::NoGeometry, const QgsCoordinateReferenceSystem &crs = QgsCoordinateReferenceSystem(), QgsFeatureSink::SinkFlags sinkFlags = QgsFeatureSink::SinkFlags(), const QVariantMap &createOptions = QVariantMap(), const QStringList &datasourceOptions = QStringList(), const QStringList &layerOptions = QStringList() ) const;
 %Docstring
 Evaluates the parameter with matching ``name`` to a feature sink.
 
@@ -841,7 +876,7 @@ for deleting the returned object.
 :raises QgsProcessingException: 
 %End
 
-    QgsProcessingFeatureSource *parameterAsSource( const QVariantMap &parameters, const QString &name, QgsProcessingContext &context ) const /Factory/;
+    std::unique_ptr<QgsProcessingFeatureSource> parameterAsSource( const QVariantMap &parameters, const QString &name, QgsProcessingContext &context ) const;
 %Docstring
 Evaluates the parameter with matching ``name`` to a feature source.
 

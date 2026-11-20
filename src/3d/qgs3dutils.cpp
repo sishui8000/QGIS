@@ -535,10 +535,10 @@ QColor Qgs3DUtils::srgbToLinear( const QColor &color )
   return QColor::fromRgbF( srgbFloatToLinear( color.redF() ), srgbFloatToLinear( color.greenF() ), srgbFloatToLinear( color.blueF() ), color.alphaF() );
 }
 
-void Qgs3DUtils::extractPointPositions(
-  const QgsFeature &f, const Qgs3DRenderContext &context, const QgsVector3D &chunkOrigin, Qgis::AltitudeClamping altClamp, QVector<QVector3D> &positions, const QgsVector3D &translation
-)
+void Qgs3DUtils::extractPointPositions( const QgsFeature &f, const Qgs3DRenderContext &context, const QgsVector3D &chunkOrigin, Qgis::AltitudeClamping altClamp, QVector<QVector3D> &positions )
 {
+  const bool isGeocentric = context.crs().type() == Qgis::CrsType::Geocentric;
+  const bool useTerrainHeight = !isGeocentric && context.terrainRenderingEnabled() && context.terrainGenerator();
   const QgsAbstractGeometry *g = f.geometry().constGet();
   for ( auto it = g->vertices_begin(); it != g->vertices_end(); ++it )
   {
@@ -548,27 +548,38 @@ void Qgs3DUtils::extractPointPositions(
     {
       geomZ = pt.z();
     }
-    const float terrainZ = context.terrainRenderingEnabled() && context.terrainGenerator()
-                             ? static_cast<float>( context.terrainGenerator()->heightAt( pt.x(), pt.y(), context ) * ( context.terrainSettings() ? context.terrainSettings()->verticalScale() : 1 ) )
-                             : 0.f;
+
     float h = 0.0f;
-    switch ( altClamp )
+    if ( isGeocentric )
     {
-      case Qgis::AltitudeClamping::Absolute:
-        h = geomZ;
-        break;
-      case Qgis::AltitudeClamping::Terrain:
-        h = terrainZ;
-        break;
-      case Qgis::AltitudeClamping::Relative:
-        h = terrainZ + geomZ;
-        break;
+      // keep the original Z from geocentric coordinates
+      // (we do not support terrains in globe mode yet)
+      h = geomZ;
     }
+    else
+    {
+      const float terrainZ = useTerrainHeight
+                               ? static_cast<float>( context.terrainGenerator()->heightAt( pt.x(), pt.y(), context ) * ( context.terrainSettings() ? context.terrainSettings()->verticalScale() : 1 ) )
+                               : 0.f;
+      switch ( altClamp )
+      {
+        case Qgis::AltitudeClamping::Absolute:
+          h = geomZ;
+          break;
+        case Qgis::AltitudeClamping::Terrain:
+          h = terrainZ;
+          break;
+        case Qgis::AltitudeClamping::Relative:
+          h = terrainZ + geomZ;
+          break;
+      }
+    }
+
     // clang-format off
     positions.append( QVector3D(
-      static_cast<float>( pt.x() - chunkOrigin.x() + translation.x() ),
-      static_cast<float>( pt.y() - chunkOrigin.y() + translation.y() ),
-      static_cast<float>( h - chunkOrigin.z() + translation.z() )
+      static_cast<float>( pt.x() - chunkOrigin.x() ),
+      static_cast<float>( pt.y() - chunkOrigin.y() ),
+      static_cast<float>( h - chunkOrigin.z() )
     ) );
     // clang-format on
     QgsDebugMsgLevel( u"%1 %2 %3"_s.arg( positions.last().x() ).arg( positions.last().y() ).arg( positions.last().z() ), 2 );
@@ -796,25 +807,42 @@ QgsRay3D Qgs3DUtils::rayFromScreenPoint( const QPoint &point, const QSize &windo
   const QVector3D deviceCoords( point.x(), point.y(), 0.0 );
   // normalized device coordinates
   const QVector3D normDeviceCoords( 2.0 * deviceCoords.x() / windowSize.width() - 1.0f, 1.0f - 2.0 * deviceCoords.y() / windowSize.height(), camera->nearPlane() );
-  // clip coordinates
-  const QVector4D rayClip( normDeviceCoords.x(), normDeviceCoords.y(), -1.0, 0.0 );
+  // clip coordinates of point on ray (its "end")
+  const QVector4D rayEndClip( normDeviceCoords.x(), normDeviceCoords.y(), 0.0, 1.0 );
 
   const QMatrix4x4 invertedProjMatrix = camera->projectionMatrix().inverted();
   const QMatrix4x4 invertedViewMatrix = camera->viewMatrix().inverted();
 
-  // ray direction in view coordinates
-  QVector4D rayDirView = invertedProjMatrix * rayClip;
-  // ray origin in world coordinates
-  const QVector4D rayOriginWorld = invertedViewMatrix * QVector4D( 0.0f, 0.0f, 0.0f, 1.0f );
+  QVector3D rayOriginWorld; // ray origin in world coordinates
+  switch ( camera->projectionType() )
+  {
+    case Qt3DRender::QCameraLens::PerspectiveProjection:
+    {
+      // In perspective projection, the ray always comes from the camera centre.
+      rayOriginWorld = QVector3D( invertedViewMatrix * QVector4D( 0.0f, 0.0f, 0.0f, 1.0f ) );
+      break;
+    }
+    case Qt3DRender::QCameraLens::OrthographicProjection:
+    {
+      // In orthographic projection, the ray centre shifts with the cursor, the
+      // ray is always perpendicular to the projection plane.
+      QVector4D rayOriginView = invertedProjMatrix * rayEndClip;
+      rayOriginView.setZ( 0.0f );
+      rayOriginWorld = QVector3D( invertedViewMatrix * rayOriginView );
+      break;
+    }
+    default:
+      QgsDebugError( "Unhandled 3D projection type" );
+  }
 
-  // ray direction in world coordinates
-  rayDirView.setZ( -1.0f );
-  rayDirView.setW( 0.0f );
-  const QVector4D rayDirWorld4D = invertedViewMatrix * rayDirView;
-  QVector3D rayDirWorld( rayDirWorld4D.x(), rayDirWorld4D.y(), rayDirWorld4D.z() );
+  // Find ray direction by first unprojecting the ray end's position
+  const QVector4D rayEndView = invertedProjMatrix * rayEndClip;
+  const QVector4D rayEndWorld4D = invertedViewMatrix * rayEndView;
+  const QVector3D rayEndWorld = rayEndWorld4D.toVector3DAffine();
+  QVector3D rayDirWorld = rayEndWorld - rayOriginWorld;
   rayDirWorld = rayDirWorld.normalized();
 
-  return QgsRay3D( QVector3D( rayOriginWorld ), rayDirWorld );
+  return QgsRay3D( rayOriginWorld, rayDirWorld );
 }
 
 QVector3D Qgs3DUtils::screenPointToWorldPos( const QPoint &screenPoint, double depth, const QSize &screenSize, Qt3DRender::QCamera *camera )
@@ -1123,7 +1151,7 @@ QgsPoint Qgs3DUtils::screenPointToMapCoordinates( const QPoint &screenPoint, con
 
   // pick an arbitrary point mid-way between near and far plane
   const float pointDistance = ( cameraController->camera()->farPlane() + cameraController->camera()->nearPlane() ) / 2;
-  const QVector3D worldPoint = ray.origin() + pointDistance * ray.direction().normalized();
+  const QVector3D worldPoint = ray.point( pointDistance );
   const QgsVector3D mapTransform = worldToMapCoordinates( worldPoint, mapSettings->origin() );
   const QgsPoint mapPoint( mapTransform.x(), mapTransform.y(), mapTransform.z() );
   return mapPoint;
@@ -1285,11 +1313,22 @@ std::unique_ptr<Qt3DRender::QCamera> Qgs3DUtils::copyCamera( Qt3DRender::QCamera
   copy->setPosition( cam->position() );
   copy->setViewCenter( cam->viewCenter() );
   copy->setUpVector( cam->upVector() );
-  copy->setProjectionMatrix( cam->projectionMatrix() );
-  copy->setNearPlane( cam->nearPlane() );
-  copy->setFarPlane( cam->farPlane() );
-  copy->setAspectRatio( cam->aspectRatio() );
-  copy->setFieldOfView( cam->fieldOfView() );
+
+  switch ( cam->projectionType() )
+  {
+    case Qt3DRender::QCameraLens::OrthographicProjection:
+      copy->lens()->setOrthographicProjection( cam->left(), cam->right(), cam->bottom(), cam->top(), cam->nearPlane(), cam->farPlane() );
+      break;
+    case Qt3DRender::QCameraLens::FrustumProjection:
+      copy->lens()->setFrustumProjection( cam->left(), cam->right(), cam->bottom(), cam->top(), cam->nearPlane(), cam->farPlane() );
+      break;
+    case Qt3DRender::QCameraLens::PerspectiveProjection:
+      copy->lens()->setPerspectiveProjection( cam->fieldOfView(), cam->aspectRatio(), cam->nearPlane(), cam->farPlane() );
+      break;
+    case Qt3DRender::QCameraLens::CustomProjection:
+      copy->setProjectionMatrix( cam->projectionMatrix() );
+      break;
+  }
   return copy;
 }
 
@@ -1317,4 +1356,71 @@ void Qgs3DUtils::setTextureFiltering( Qt3DRender::QAbstractTexture *texture, con
       texture->setMaximumAnisotropy( 16 );
       break;
   }
+}
+
+Qt3DRender::QAbstractTexture::TextureFormat Qgs3DUtils::determineTextureFormat( QImage::Format imageFormat, bool isSrgb, bool &requiresConversionToRgb )
+{
+  requiresConversionToRgb = false;
+  switch ( imageFormat )
+  {
+    case QImage::Format_RGBA32FPx4:
+    case QImage::Format_RGBA32FPx4_Premultiplied:
+      return Qt3DRender::QAbstractTexture::RGBA32F;
+
+    case QImage::Format_RGBX32FPx4:
+      return Qt3DRender::QAbstractTexture::RGB32F;
+
+    case QImage::Format_RGBA16FPx4:
+    case QImage::Format_RGBA16FPx4_Premultiplied:
+      return Qt3DRender::QAbstractTexture::RGBA16F;
+
+    case QImage::Format_RGBX16FPx4:
+      return Qt3DRender::QAbstractTexture::RGB16F;
+
+    case QImage::Format_RGBA8888:
+    case QImage::Format_RGBA8888_Premultiplied:
+    case QImage::Format_ARGB32:
+    case QImage::Format_ARGB32_Premultiplied:
+      return isSrgb ? Qt3DRender::QAbstractTexture::SRGB8_Alpha8 : Qt3DRender::QAbstractTexture::RGBA8_UNorm;
+
+    case QImage::Format_RGB32:
+    case QImage::Format_RGB888:
+      return isSrgb ? Qt3DRender::QAbstractTexture::SRGB8 : Qt3DRender::QAbstractTexture::RGB8_UNorm;
+
+    case QImage::Format_Grayscale8:
+    case QImage::Format_Alpha8:
+      return Qt3DRender::QAbstractTexture::R8_UNorm;
+    case QImage::Format_Grayscale16:
+      return Qt3DRender::QAbstractTexture::R16_UNorm;
+
+    case QImage::Format_Invalid:
+    case QImage::Format_Mono:
+    case QImage::Format_MonoLSB:
+    case QImage::Format_Indexed8:
+    case QImage::Format_RGB16:
+    case QImage::Format_ARGB8565_Premultiplied:
+    case QImage::Format_RGB666:
+    case QImage::Format_ARGB6666_Premultiplied:
+    case QImage::Format_RGB555:
+    case QImage::Format_ARGB8555_Premultiplied:
+    case QImage::Format_RGB444:
+    case QImage::Format_ARGB4444_Premultiplied:
+    case QImage::Format_RGBX8888:
+    case QImage::Format_BGR30:
+    case QImage::Format_A2BGR30_Premultiplied:
+    case QImage::Format_RGB30:
+    case QImage::Format_A2RGB30_Premultiplied:
+    case QImage::Format_RGBX64:
+    case QImage::Format_RGBA64:
+    case QImage::Format_RGBA64_Premultiplied:
+    case QImage::Format_BGR888:
+#if QT_VERSION >= QT_VERSION_CHECK( 6, 8, 0 )
+    case QImage::Format_CMYK8888:
+#endif
+    case QImage::NImageFormats:
+      // image format isn't compatible, it needs converting by caller
+      requiresConversionToRgb = true;
+      break;
+  }
+  return isSrgb ? Qt3DRender::QAbstractTexture::SRGB8_Alpha8 : Qt3DRender::QAbstractTexture::RGBA8_UNorm;
 }
